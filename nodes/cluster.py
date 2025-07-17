@@ -11,12 +11,13 @@ Examples: "Pricing Confusion", "Bug in Signup Flow", "Performance Lag", "Feature
 Only output the theme name.
 """)
     
-    chain = llm | prompt
+    chain = prompt | llm  
     enriched = []
 
     for fb in state["processed_feedback"]:
         response = chain.invoke({"text": fb["text"]})
-        fb["theme"] = response.content.strip()
+        content = getattr(response, "content", str(response)).strip()
+        fb["theme"] = content
         enriched.append(fb)
 
     return {
