@@ -24,21 +24,6 @@
 
 ---
 
-## 📦 Project Structure
-
-├── main.py # FastAPI entrypoint
-├── graph.py # LangGraph pipeline
-├── llm.py # Gemini/Groq config
-├── schema.py # Data schema (Pydantic)
-├── nodes/ # LangGraph nodes
-├── ui/ # Next.js frontend
-├── requirements.txt
-└── README.md
-
-
-
----
-
 ## ⚙️ Getting Started (Local)
 
 ```bash
