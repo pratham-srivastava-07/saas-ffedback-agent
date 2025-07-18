@@ -187,7 +187,7 @@ export function FeedbackAnalysis({ result }: { result: AnalysisResult | null }) 
                 </div>
 
                 {/* Categories */}
-                {result.categories?.length > 0 && (
+                {Array.isArray(result.categories) && result.categories.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -196,7 +196,7 @@ export function FeedbackAnalysis({ result }: { result: AnalysisResult | null }) 
                   >
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Categories</span>
                     <div className="flex flex-wrap gap-2">
-                      {result.categories.map((category, i) => (
+                      {result.categories?.map((category, i) => (
                         <motion.div
                           key={i}
                           initial={{ scale: 0 }}
@@ -213,7 +213,7 @@ export function FeedbackAnalysis({ result }: { result: AnalysisResult | null }) 
                 )}
 
                 {/* Keywords */}
-                {result.keywords?.length > 0 && (
+                {Array.isArray(result.keywords) && result.keywords.length > 0 && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -222,7 +222,7 @@ export function FeedbackAnalysis({ result }: { result: AnalysisResult | null }) 
                   >
                     <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Key Terms</span>
                     <div className="flex flex-wrap gap-2">
-                      {result.keywords.map((keyword, i) => (
+                      {result.keywords?.map((keyword, i) => (
                         <motion.div
                           key={i}
                           initial={{ scale: 0 }}

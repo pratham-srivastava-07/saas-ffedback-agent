@@ -23,7 +23,7 @@ export default function Dashboard() {
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch('http://localhost:8000/analyze', {
+      const response = await fetch('https://saas-feedback-agent.onrender.com/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
