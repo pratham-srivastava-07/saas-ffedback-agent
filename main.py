@@ -1,36 +1,47 @@
 from graph import build_graph
 from schema import FeedbackState
 from pprint import pprint
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import List
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
-app = build_graph()
+app = FastAPI()
+graph_app = build_graph()
 
-if __name__ == "__main__":
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class FeedbackItem(BaseModel):
+    id: str
+    text: str
+    user_type: str
+    source: str
+
+class FeedbackInput(BaseModel):
+    raw_feedback: List[FeedbackItem]
+
+@app.post("/analyze")
+def analyze_feedback(payload: FeedbackInput):
     input_data: FeedbackState = {
-        "raw_feedback": [
-            {
-                "id": "1",
-                "text": "The dashboard is super slow, I might cancel.",
-                "user_type": "paid",
-                "source": "support"
-            },
-            {
-                "id": "2",
-                "text": "Can we get dark mode?",
-                "user_type": "free",
-                "source": "review"
-            },
-            {
-                "id": "3",
-                "text": "Love the new update",
-                "user_type": "paid",
-                "source": "nps"
-            }
-        ],
+        "raw_feedback": [item.dict() for item in payload.raw_feedback],
         "processed_feedback": [],
         "recommendations": []
     }
 
-    result = app.invoke(input_data)
+    result = graph_app.invoke(input_data)
 
     print("\n📊 Final Processed Output:\n")
     pprint(result)
+
+    return result
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
