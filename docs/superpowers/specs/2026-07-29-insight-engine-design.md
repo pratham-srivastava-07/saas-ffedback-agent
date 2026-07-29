@@ -87,7 +87,7 @@ normalize → triage
               ├─(nothing actionable)──────────────→ summarize → END
               └─(Send fan-out, one per item)→ analyze_one ─┐
                                                             ↓ fan-in
-        embed (one batched call) → cluster → name_themes → resolve_taxonomy
+        embed (one batched call) → cluster → resolve_taxonomy → name_themes
                                                             ↓
                           prioritize → detect_trends → recommend
                                                             ↓
@@ -103,13 +103,13 @@ normalize → triage
 
 | Node | LLM | Purpose |
 |---|---|---|
-| `normalize` | no | Trim, collapse whitespace, drop exact and near-duplicates |
+| `normalize` | no | Trim, collapse whitespace, drop exact duplicates |
 | `triage` | no | Heuristic spam/noise rejection; drives the conditional edge |
 | `analyze_one` | yes | Per-item structured sentiment, emotion, intent, severity, feature area, churn risk |
 | `embed` | embeddings | One batched embedding call for all surviving texts |
 | `cluster` | no | Agglomerative clustering over embeddings |
-| `name_themes` | yes | Name and describe each cluster from representative samples |
-| `resolve_taxonomy` | yes* | Match clusters to stored themes by centroid similarity; name only genuinely new ones |
+| `resolve_taxonomy` | no | Match clusters to stored themes by centroid similarity |
+| `name_themes` | yes | Name, describe and persist only the genuinely new clusters |
 | `prioritize` | no | Impact score: frequency x severity x user-tier weight |
 | `detect_trends` | no | Compare against trailing snapshots; emerging / spiking / declining |
 | `recommend` | yes | Product actions for the top themes |
@@ -124,6 +124,17 @@ its place against the ranked-list-of-what-to-fix outcome.
 unsupported advice, and it is the clearest demonstration of a LangGraph cycle.
 
 ### Design decisions
+
+**Naming runs after taxonomy resolution,** reversing the order shown in the original
+sketch. Matching first means LLM naming calls are spent only on clusters we have
+never seen; a recurring theme keeps its established name, which is the point of a
+stable taxonomy.
+
+**Deduplication is exact-match only, never semantic.** The original sketch said
+"dedupe by embedding similarity". That is wrong: if forty people report the same bug
+in forty phrasings, that is forty mentions, and collapsing them would destroy the
+volume signal the product exists to produce. Only genuine duplicates — the same text
+submitted twice — are removed.
 
 **Triage is heuristic, not LLM.** Length, character-class and URL-only checks.
 Deterministic behaviour is testable and cannot embarrass a live demo. It still
