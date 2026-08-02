@@ -28,7 +28,20 @@ from app.schemas import (
     ThemeNaming,
 )
 
-TOPICS = ["signup", "billing", "performance", "export", "mobile", "search"]
+# Each topic gets its own dimension, so texts about different topics are
+# orthogonal and cluster apart. Substrings must not overlap: "search" would
+# also match inside "research", so demo and test copy avoids such words.
+TOPICS = [
+    "signup",
+    "billing",
+    "performance",
+    "export",
+    "mobile",
+    "search",
+    "dashboard",
+    "integration",
+    "notification",
+]
 _EXTRA_DIMS = 4
 
 
