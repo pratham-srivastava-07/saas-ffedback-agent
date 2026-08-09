@@ -26,3 +26,6 @@ jobs:
 
       - name: Verify the demo corpus seeds end to end
         run: python scripts/seed_demo.py --offline --reset --database /tmp/ci-demo.db
+
+      - name: Verify the threshold calibration sweep runs
+        run: python scripts/calibrate_threshold.py --offline

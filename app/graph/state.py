@@ -74,6 +74,10 @@ class TrendSignal(TypedDict, total=False):
 
 class AnalysisState(TypedDict, total=False):
     run_id: str
+    # Tenancy travels in the state, not on the Runtime: the Runtime is built
+    # once at startup and shared by every request, so it cannot carry
+    # per-request scope.
+    workspace_id: str
     raw: list[dict[str, Any]]
     clean: list[CleanItem]
     rejected: Annotated[list[RejectedItem], operator.add]

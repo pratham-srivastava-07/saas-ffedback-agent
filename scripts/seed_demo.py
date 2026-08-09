@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 from app import service  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.llm import Runtime, build_runtime  # noqa: E402
-from app.store.models import Base  # noqa: E402
+from app.store.migrate import upgrade  # noqa: E402
 from scripts.demo_data import weeks_with_ids  # noqa: E402
 
 DEFAULT_DB = REPO_ROOT / "sentilytics.db"
@@ -69,8 +69,9 @@ async def seed(database: Path, offline: bool, reset: bool) -> int:
         print(f"Removed existing database at {database}")
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{database}")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Goes through the real startup path so the default workspace exists;
+    # the demo seeds into it.
+    await upgrade(engine)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     runtime = (

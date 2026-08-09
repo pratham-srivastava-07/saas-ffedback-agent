@@ -205,8 +205,157 @@ Coverage: each node in isolation, the full graph end to end on fakes, and the AP
 2. The triage short-circuit reaches END with no actionable items.
 3. Trend detection stays silent on thin history.
 
+## Phase 2 — tenancy, evidence, hardening
+
+Built after the original spec shipped. Auth and multi-tenancy were listed below as
+out of scope; that turned out to be wrong, for a specific reason.
+
+### Workspace scoping
+
+`Theme` had no tenant column and `repo.load_themes()` returned every row unscoped.
+That is not merely a missing feature: taxonomy matching compares a new cluster's
+centroid against *stored* centroids, so with two tenants in one database, company
+A's cluster would merge into company B's theme and silently corrupt both
+taxonomies. Nothing else could be built on top of it.
+
+Every run, theme and feedback item now carries a `workspace_id`, and every read
+that could span tenants takes one.
+
+**Tenancy travels in the graph state, not on the `Runtime`.** The `Runtime` is
+constructed once at startup and shared by every request, so it cannot carry
+per-request scope. `AnalysisState.workspace_id` is read by `resolve_taxonomy`,
+`name_themes` and `detect_trends`.
+
+**Pre-tenancy databases are upgraded in place**, not rejected. `app/store/migrate.py`
+adds missing columns with `ALTER TABLE ADD COLUMN` and adopts orphaned rows into a
+default workspace. No Alembic: the schema is small and SQLite-only. A test builds a
+genuinely old-schema database, upgrades it, and asserts the data survives.
+
+### Evidence retrieval
+
+The product promised a ranked list "with the evidence attached" and provided no way
+to read any of it.
+
+- `GET /themes/{id}/items` — paginated feedback behind a theme.
+- `GET /runs/{id}/result` — a past run rebuilt in full. Kept separate from
+  `GET /runs/{id}` so listing history stays cheap.
+
+**Per-run trends are persisted rather than reconstructed from snapshots.** The
+`emerging` verdict depends on whether a theme was new *at the time*, which no
+snapshot records; reconstruction would relabel every first appearance. Themes in a
+past result come from that run's snapshots, so counts and impact scores are the ones
+the run actually produced rather than what the theme has accumulated since.
+`ThemeSnapshot` gained `impact_score` and `is_new` to make that exact.
+
+### Auth and rate limiting
+
+`X-API-Key` resolves to a workspace. Only the SHA-256 is stored — the keys are
+high-entropy random tokens, not user-chosen secrets, so an unsalted hash is
+adequate; a password would need argon2.
+
+Auth is required by default. `ALLOW_ANONYMOUS_ACCESS` (off, and logged loudly when
+on) maps unkeyed requests to the default workspace for local use. `/health` and
+`/graph` stay open for load balancers.
+
+Rate limiting is an in-process token bucket per workspace, on the endpoints that
+invoke models. Reads are unthrottled. **This is per-process**: N workers means N
+times the allowance. Accepted deliberately rather than adding Redis to a
+single-node deployment.
+
+### Other fixes
+
+- **Abandoned runs.** A crash left rows at `status="running"` forever with nothing
+  to clear them. A startup reaper fails anything older than `STALE_RUN_MINUTES`.
+  Chosen over a LangGraph checkpointer: resumability is not worth the complexity,
+  and the ghost rows were the actual problem.
+- **`_utcnow()` returned timezone-aware datetimes into naive `DateTime` columns**,
+  so a freshly-created object and the same row re-read compared as different types
+  and raised on any datetime comparison. Now naive UTC throughout.
+- **CORS is configurable from the environment**, comma-separated so it needs no
+  JSON quoting in a shell. It previously hard-defaulted to `localhost:3000`, which
+  blocks any deployed frontend.
+
+### CSV ingestion
+
+`POST /analyze/csv` with configurable column mapping. Real feedback arrives as a
+Zendesk or Intercom export; requiring hand-written JSON is the difference between
+trying the product and closing the tab. Only the text column is mandatory.
+Unrecognised tier or source values fall back rather than failing the upload — a
+stray `Platinum` should not cost the user their whole file.
+
+### Threshold calibration
+
+`THEME_MERGE_THRESHOLD` had only ever run against the fake embedder's orthogonal
+vectors, where every similarity is 1.0 or 0.0 — completely unexercised in the
+0.6–0.9 band where real embeddings live. `scripts/calibrate_threshold.py` sweeps it
+against labelled data, comparing centroid to centroid as the pipeline does, and
+reports wrong merges against wrong splits.
+
+It reports that offline mode *cannot* answer the question rather than presenting a
+tie-break artifact as a recommendation.
+
+## Phase 3 — accounts and the cluster explorer
+
+Added to support frontend decisions made after phase 2, against contracts fixed by
+the coordinator while the UI was built in parallel.
+
+### Email/password accounts
+
+A `User` owns exactly one workspace. Passwords use **`hashlib.scrypt`** with a
+per-user random salt — standard library, no bcrypt/argon2 dependency. This is the
+opposite of the API-key decision, deliberately: keys are high-entropy random tokens
+where a plain SHA-256 is fine, whereas passwords are user-chosen and low-entropy and
+need a slow salted KDF.
+
+Signup writes the user, workspace and key hash in one transaction — a user without a
+workspace, or a workspace without a key, are both unusable accounts.
+
+**Login returns the workspace API key rather than a session token.** The key auth
+built in phase 2 stays the single source of truth, and there is no second credential
+system to keep consistent. Two consequences, documented rather than hidden:
+
+1. There is no server-side session to revoke; the key is only as safe as client
+   storage.
+2. **Logging in rotates the key**, because only its hash is stored and the old one
+   genuinely cannot be recovered. Signing in on a second device signs the first out.
+
+That is acceptable for one-workspace-per-user. Multi-device use would need sessions.
+
+Login answers identically for an unknown email and a wrong password, and burns
+equivalent scrypt work on the unknown-email path, so the endpoint cannot be used to
+enumerate accounts by response or by timing.
+
+### 3D projection
+
+Embeddings previously existed only in graph state and were discarded, so there was
+nothing to plot. Each run's embeddings are now PCA-projected to three components and
+stored as `x, y, z` per feedback item.
+
+**Only the projection is stored, not the vector.** The scatter plot is its only
+consumer and SQLite is not a vector store. The cost is that switching projection
+method later means re-running analysis rather than re-projecting.
+
+**PCA is fit per run**, so coordinates from different runs sit in different bases and
+are not comparable — hence a per-run endpoint, and an explicit warning in the README
+against sharing axes.
+
+**The projection runs in the persistence layer, not as a graph node.** A node would
+be architecturally tidier, but `/analyze/stream` publishes `NODE_NAMES` in its
+`run_start` frame and the frontend renders that list; adding a node during parallel
+UI work risked breaking it for a purely cosmetic gain. The projection has no bearing
+on themes, trends or recommendations — it exists solely so stored items can be
+plotted — so persistence is a defensible home.
+
+Normalisation uses a single global scale factor rather than per-axis, which would
+stretch the cloud and misrepresent the relative distances the plot exists to show.
+
+Degenerate cases return the origin instead of raising: fewer than two items, fewer
+than three available components (padded), and identical vectors, where zero variance
+would otherwise make sklearn emit NaN through a divide-by-zero. A scatter plot is a
+nice-to-have and must never be able to fail a run.
+
 ## Out of scope
 
-Auth, multi-tenancy, billing, and ingestion connectors. Each is its own project.
-The UI is designed and approved separately; this spec changes no file under `ui/`
-except to document the `NEXT_PUBLIC_API_URL` contract.
+Billing, and ingestion connectors beyond CSV (Zendesk, Intercom and App Store APIs).
+Each is its own project. The UI is designed and approved separately; this spec
+changes no file under `ui/` except to document the `NEXT_PUBLIC_API_URL` contract.
