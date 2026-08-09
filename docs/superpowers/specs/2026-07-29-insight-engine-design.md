@@ -205,8 +205,97 @@ Coverage: each node in isolation, the full graph end to end on fakes, and the AP
 2. The triage short-circuit reaches END with no actionable items.
 3. Trend detection stays silent on thin history.
 
+## Phase 2 — tenancy, evidence, hardening
+
+Built after the original spec shipped. Auth and multi-tenancy were listed below as
+out of scope; that turned out to be wrong, for a specific reason.
+
+### Workspace scoping
+
+`Theme` had no tenant column and `repo.load_themes()` returned every row unscoped.
+That is not merely a missing feature: taxonomy matching compares a new cluster's
+centroid against *stored* centroids, so with two tenants in one database, company
+A's cluster would merge into company B's theme and silently corrupt both
+taxonomies. Nothing else could be built on top of it.
+
+Every run, theme and feedback item now carries a `workspace_id`, and every read
+that could span tenants takes one.
+
+**Tenancy travels in the graph state, not on the `Runtime`.** The `Runtime` is
+constructed once at startup and shared by every request, so it cannot carry
+per-request scope. `AnalysisState.workspace_id` is read by `resolve_taxonomy`,
+`name_themes` and `detect_trends`.
+
+**Pre-tenancy databases are upgraded in place**, not rejected. `app/store/migrate.py`
+adds missing columns with `ALTER TABLE ADD COLUMN` and adopts orphaned rows into a
+default workspace. No Alembic: the schema is small and SQLite-only. A test builds a
+genuinely old-schema database, upgrades it, and asserts the data survives.
+
+### Evidence retrieval
+
+The product promised a ranked list "with the evidence attached" and provided no way
+to read any of it.
+
+- `GET /themes/{id}/items` — paginated feedback behind a theme.
+- `GET /runs/{id}/result` — a past run rebuilt in full. Kept separate from
+  `GET /runs/{id}` so listing history stays cheap.
+
+**Per-run trends are persisted rather than reconstructed from snapshots.** The
+`emerging` verdict depends on whether a theme was new *at the time*, which no
+snapshot records; reconstruction would relabel every first appearance. Themes in a
+past result come from that run's snapshots, so counts and impact scores are the ones
+the run actually produced rather than what the theme has accumulated since.
+`ThemeSnapshot` gained `impact_score` and `is_new` to make that exact.
+
+### Auth and rate limiting
+
+`X-API-Key` resolves to a workspace. Only the SHA-256 is stored — the keys are
+high-entropy random tokens, not user-chosen secrets, so an unsalted hash is
+adequate; a password would need argon2.
+
+Auth is required by default. `ALLOW_ANONYMOUS_ACCESS` (off, and logged loudly when
+on) maps unkeyed requests to the default workspace for local use. `/health` and
+`/graph` stay open for load balancers.
+
+Rate limiting is an in-process token bucket per workspace, on the endpoints that
+invoke models. Reads are unthrottled. **This is per-process**: N workers means N
+times the allowance. Accepted deliberately rather than adding Redis to a
+single-node deployment.
+
+### Other fixes
+
+- **Abandoned runs.** A crash left rows at `status="running"` forever with nothing
+  to clear them. A startup reaper fails anything older than `STALE_RUN_MINUTES`.
+  Chosen over a LangGraph checkpointer: resumability is not worth the complexity,
+  and the ghost rows were the actual problem.
+- **`_utcnow()` returned timezone-aware datetimes into naive `DateTime` columns**,
+  so a freshly-created object and the same row re-read compared as different types
+  and raised on any datetime comparison. Now naive UTC throughout.
+- **CORS is configurable from the environment**, comma-separated so it needs no
+  JSON quoting in a shell. It previously hard-defaulted to `localhost:3000`, which
+  blocks any deployed frontend.
+
+### CSV ingestion
+
+`POST /analyze/csv` with configurable column mapping. Real feedback arrives as a
+Zendesk or Intercom export; requiring hand-written JSON is the difference between
+trying the product and closing the tab. Only the text column is mandatory.
+Unrecognised tier or source values fall back rather than failing the upload — a
+stray `Platinum` should not cost the user their whole file.
+
+### Threshold calibration
+
+`THEME_MERGE_THRESHOLD` had only ever run against the fake embedder's orthogonal
+vectors, where every similarity is 1.0 or 0.0 — completely unexercised in the
+0.6–0.9 band where real embeddings live. `scripts/calibrate_threshold.py` sweeps it
+against labelled data, comparing centroid to centroid as the pipeline does, and
+reports wrong merges against wrong splits.
+
+It reports that offline mode *cannot* answer the question rather than presenting a
+tie-break artifact as a recommendation.
+
 ## Out of scope
 
-Auth, multi-tenancy, billing, and ingestion connectors. Each is its own project.
-The UI is designed and approved separately; this spec changes no file under `ui/`
-except to document the `NEXT_PUBLIC_API_URL` contract.
+Billing, and ingestion connectors beyond CSV (Zendesk, Intercom and App Store APIs).
+Each is its own project. The UI is designed and approved separately; this spec
+changes no file under `ui/` except to document the `NEXT_PUBLIC_API_URL` contract.

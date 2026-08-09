@@ -189,11 +189,50 @@ deterministic vectors from text — no API key, no network, no cost, and stable
 clustering assertions. CI runs the same command plus a full demo seed, so it needs
 no secrets.
 
-Three structural hazards get dedicated tests, because each is a way this class of
-system fails quietly: the critique cycle terminates when the critic never approves,
-the triage short-circuit reaches the end with nothing actionable, and trend
-detection stays silent on thin history. A fourth replays the whole five-week corpus
-to prove themes survive across runs rather than being reinvented each time.
+Structural hazards get dedicated tests, because each is a way this class of system
+fails quietly: the critique cycle terminates when the critic never approves, the
+triage short-circuit reaches the end with nothing actionable, trend detection stays
+silent on thin history, two workspaces analysing identical feedback stay completely
+separate, and a pre-tenancy database survives the schema upgrade with its data
+intact. Another replays the whole five-week corpus to prove themes survive across
+runs rather than being reinvented each time.
+
+---
+
+## Workspaces and auth
+
+Everything — runs, themes, feedback, trend history — is scoped to a **workspace**.
+Without that, two users of one deployment would share a taxonomy: company A's
+"Billing issues" would absorb company B's and corrupt both.
+
+Create one, and note the key it prints:
+
+```bash
+python scripts/create_workspace.py "Acme Product Team"
+```
+
+```
+  Name:  Acme Product Team
+  ID:    d503647d-7534-4a36-991f-71b298dea825
+  Key:   sk_taX4GwcJpEgleVmLIwVWsuRZPAfCvgIPqn3RS6Q8L8o
+```
+
+Only the SHA-256 of the key is stored, so it is shown once and cannot be
+recovered — a leaked database yields no working credentials. Send it on every
+request:
+
+```bash
+curl -H "X-API-Key: sk_..." localhost:8000/themes
+```
+
+Auth is **required by default**. For local single-user work set
+`ALLOW_ANONYMOUS_ACCESS=true`, which maps unkeyed requests to the default
+workspace. Never do that on a deployed instance: `/analyze` spends real money on
+every call.
+
+`/analyze` and `/analyze/csv` are rate limited per workspace (default 30/min).
+The bucket lives in process memory, so **N workers means N times the allowance** —
+fine for a single node, and the point at which to move it to Redis.
 
 ---
 
@@ -203,16 +242,56 @@ to prove themes survive across runs rather than being reinvented each time.
 |---|---|
 | `POST /analyze` | Run the pipeline, return the full result |
 | `POST /analyze/stream` | Same, streamed as SSE per node — consume with `fetch` + `ReadableStream` |
-| `GET /themes` | The accumulated taxonomy across all runs |
+| `POST /analyze/csv` | Upload a CSV export directly |
+| `GET /themes` | The accumulated taxonomy for this workspace |
 | `GET /themes/trends` | Per-theme history for sparklines |
+| `GET /themes/{id}/items` | **The evidence** — paginated feedback behind a theme |
 | `GET /runs`, `GET /runs/{id}` | Run history |
+| `GET /runs/{id}/result` | Rebuild a past run in full: items, themes, trends, recommendations |
 | `GET /graph` | The live pipeline topology as mermaid |
+| `GET /health` | Unauthenticated, for load balancers |
 
 Requests are bounded at 200 items and 5000 characters per item.
+
+### CSV upload
+
+Real feedback arrives as a Zendesk or Intercom export, not a hand-built JSON array.
+Only a text column is required; everything else falls back to a default, so the
+minimum viable upload is a one-column file.
+
+```bash
+curl -H "X-API-Key: sk_..." -F "file=@zendesk-export.csv" \
+     -F "text_column=body" -F "id_column=ticket_id" \
+     localhost:8000/analyze/csv
+```
+
+Unrecognised values in a tier or source column fall back rather than rejecting the
+upload — a stray `Platinum` should not cost you the whole file.
+
+---
+
+## Tuning the merge threshold
+
+`THEME_MERGE_THRESHOLD` (0.82) decides whether a new cluster *is* an existing theme.
+Too low and unrelated problems collapse together; too high and the taxonomy invents
+new themes every run. It is the single number most worth tuning against your data:
+
+```bash
+python scripts/calibrate_threshold.py          # needs GOOGLE_API_KEY
+python scripts/calibrate_threshold.py --offline   # smoke test only
+```
+
+The sweep mirrors what the pipeline actually does — centroid against centroid, not
+text against text — and reports wrong merges against wrong splits at each threshold
+so you can choose which way to err.
+
+**Offline mode cannot answer this question.** The fake embedder maps topics to
+orthogonal dimensions, so every similarity is exactly 1.0 or 0.0 and any threshold
+scores perfectly. The script says so rather than reporting a meaningless winner.
 
 ---
 
 ## Not built
 
-Auth, multi-tenancy, billing, and ingestion connectors (Zendesk, Intercom, App Store).
-Each is its own project. The pricing page in the UI is presentational.
+Billing, and ingestion connectors beyond CSV (Zendesk, Intercom, App Store APIs).
+The pricing page in the UI is presentational.
