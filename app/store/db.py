@@ -38,9 +38,11 @@ def get_session_factory(database_url: str | None = None) -> async_sessionmaker:
 
 
 async def init_db(engine: AsyncEngine | None = None) -> None:
-    engine = engine or get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Create missing tables, upgrade pre-tenancy databases, seed the default
+    workspace."""
+    from app.store.migrate import upgrade
+
+    await upgrade(engine or get_engine())
 
 
 async def reset_state() -> None:

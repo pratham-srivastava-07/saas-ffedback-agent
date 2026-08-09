@@ -15,6 +15,7 @@ from app.graph.vectors import cosine_similarity
 from app.llm import get_runtime
 from app.schemas import ThemeNaming
 from app.store import repo
+from app.store.models import DEFAULT_WORKSPACE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ async def name_themes(state: AnalysisState, config=None) -> dict:
                     centroid=theme.get("centroid") or [],
                     run_id=state.get("run_id", ""),
                     mentions=theme.get("count", 0),
+                    workspace_id=state.get("workspace_id", DEFAULT_WORKSPACE_ID),
                 )
                 theme["id"] = created.id
 

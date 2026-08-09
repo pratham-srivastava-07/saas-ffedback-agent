@@ -1,14 +1,71 @@
-"""Query helpers. Nodes and API handlers talk to the database only through here."""
+"""Query helpers. Nodes and API handlers talk to the database only through here.
+
+Every read that could span tenants takes a ``workspace_id``. That is not
+defensive politeness: taxonomy matching compares centroids against *stored*
+themes, so an unscoped read would let one tenant's clusters merge into
+another's themes and quietly corrupt both taxonomies.
+"""
 
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 from typing import Any, Sequence
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.store.models import FeedbackItem, Run, Theme, ThemeSnapshot
+from app.store.models import (
+    DEFAULT_WORKSPACE_ID,
+    FeedbackItem,
+    Run,
+    Theme,
+    ThemeSnapshot,
+    Workspace,
+    _utcnow,
+)
+
+
+# --------------------------------------------------------------------------
+# Workspaces
+# --------------------------------------------------------------------------
+
+
+async def create_workspace(
+    session: AsyncSession,
+    *,
+    name: str,
+    api_key_hash: str | None = None,
+    workspace_id: str | None = None,
+) -> Workspace:
+    workspace = Workspace(
+        id=workspace_id or str(uuid.uuid4()),
+        name=name,
+        api_key_hash=api_key_hash,
+    )
+    session.add(workspace)
+    await session.commit()
+    return workspace
+
+
+async def get_workspace(
+    session: AsyncSession, workspace_id: str
+) -> Workspace | None:
+    return await session.get(Workspace, workspace_id)
+
+
+async def workspace_by_key_hash(
+    session: AsyncSession, api_key_hash: str
+) -> Workspace | None:
+    result = await session.execute(
+        select(Workspace).where(Workspace.api_key_hash == api_key_hash)
+    )
+    return result.scalars().first()
+
+
+async def list_workspaces(session: AsyncSession) -> Sequence[Workspace]:
+    result = await session.execute(select(Workspace).order_by(Workspace.created_at))
+    return result.scalars().all()
 
 
 # --------------------------------------------------------------------------
@@ -16,8 +73,16 @@ from app.store.models import FeedbackItem, Run, Theme, ThemeSnapshot
 # --------------------------------------------------------------------------
 
 
-async def create_run(session: AsyncSession, run_id: str | None = None) -> Run:
-    run = Run(id=run_id or str(uuid.uuid4()), status="running")
+async def create_run(
+    session: AsyncSession,
+    run_id: str | None = None,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> Run:
+    run = Run(
+        id=run_id or str(uuid.uuid4()),
+        workspace_id=workspace_id,
+        status="running",
+    )
     session.add(run)
     await session.commit()
     return run
@@ -33,6 +98,8 @@ async def finish_run(
     rejected_count: int = 0,
     theme_count: int = 0,
     error: str | None = None,
+    trends: list | None = None,
+    recommendations: list | None = None,
 ) -> None:
     run = await session.get(Run, run_id)
     if run is None:
@@ -43,18 +110,53 @@ async def finish_run(
     run.rejected_count = rejected_count
     run.theme_count = theme_count
     run.error = error
+    if trends is not None:
+        run.trends = trends
+    if recommendations is not None:
+        run.recommendations = recommendations
     await session.commit()
 
 
-async def get_run(session: AsyncSession, run_id: str) -> Run | None:
-    return await session.get(Run, run_id)
+async def get_run(
+    session: AsyncSession, run_id: str, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> Run | None:
+    run = await session.get(Run, run_id)
+    if run is None or run.workspace_id != workspace_id:
+        return None
+    return run
 
 
-async def list_runs(session: AsyncSession, limit: int = 50) -> Sequence[Run]:
+async def list_runs(
+    session: AsyncSession,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    limit: int = 50,
+) -> Sequence[Run]:
     result = await session.execute(
-        select(Run).order_by(desc(Run.created_at)).limit(limit)
+        select(Run)
+        .where(Run.workspace_id == workspace_id)
+        .order_by(desc(Run.created_at))
+        .limit(limit)
     )
     return result.scalars().all()
+
+
+async def reap_stale_runs(session: AsyncSession, older_than_minutes: int) -> int:
+    """Fail runs left ``running`` by a crash.
+
+    Nothing else ever clears them, so without this they accumulate forever and
+    every run list is polluted by ghosts.
+    """
+    cutoff = _utcnow() - timedelta(minutes=older_than_minutes)
+    result = await session.execute(
+        update(Run)
+        .where(Run.status == "running", Run.created_at < cutoff)
+        .values(status="failed", error="Abandoned: process exited mid-run.")
+        # Rows already loaded in this session are re-read rather than
+        # re-evaluated in Python, which avoids comparing datetimes in memory.
+        .execution_options(synchronize_session="fetch")
+    )
+    await session.commit()
+    return int(result.rowcount or 0)
 
 
 # --------------------------------------------------------------------------
@@ -62,10 +164,23 @@ async def list_runs(session: AsyncSession, limit: int = 50) -> Sequence[Run]:
 # --------------------------------------------------------------------------
 
 
-async def load_themes(session: AsyncSession) -> Sequence[Theme]:
-    """All stored themes with their centroids, for similarity matching."""
-    result = await session.execute(select(Theme))
+async def load_themes(
+    session: AsyncSession, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> Sequence[Theme]:
+    """This workspace's themes with their centroids, for similarity matching."""
+    result = await session.execute(
+        select(Theme).where(Theme.workspace_id == workspace_id)
+    )
     return result.scalars().all()
+
+
+async def get_theme(
+    session: AsyncSession, theme_id: str, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> Theme | None:
+    theme = await session.get(Theme, theme_id)
+    if theme is None or theme.workspace_id != workspace_id:
+        return None
+    return theme
 
 
 async def create_theme(
@@ -76,9 +191,11 @@ async def create_theme(
     centroid: list[float],
     run_id: str,
     mentions: int,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> Theme:
     theme = Theme(
         id=str(uuid.uuid4()),
+        workspace_id=workspace_id,
         name=name,
         description=description,
         centroid=centroid,
@@ -115,10 +232,15 @@ async def merge_into_theme(
 
 
 async def list_themes_ranked(
-    session: AsyncSession, limit: int = 100
+    session: AsyncSession,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    limit: int = 100,
 ) -> Sequence[Theme]:
     result = await session.execute(
-        select(Theme).order_by(desc(Theme.total_mentions)).limit(limit)
+        select(Theme)
+        .where(Theme.workspace_id == workspace_id)
+        .order_by(desc(Theme.total_mentions))
+        .limit(limit)
     )
     return result.scalars().all()
 
@@ -140,6 +262,8 @@ async def save_snapshot(
     neutral: int,
     negative: int,
     churn_risk_count: int,
+    impact_score: float = 0.0,
+    is_new: bool = False,
 ) -> None:
     session.add(
         ThemeSnapshot(
@@ -152,6 +276,8 @@ async def save_snapshot(
             neutral=neutral,
             negative=negative,
             churn_risk_count=churn_risk_count,
+            impact_score=impact_score,
+            is_new=is_new,
         )
     )
     await session.commit()
@@ -164,7 +290,11 @@ async def theme_history(
     exclude_run_id: str | None = None,
     limit: int = 10,
 ) -> Sequence[ThemeSnapshot]:
-    """Trailing snapshots for a theme, newest first, excluding the current run."""
+    """Trailing snapshots for a theme, newest first, excluding the current run.
+
+    Scoping is inherited: the caller resolves the theme within a workspace
+    before asking for its history.
+    """
     stmt = select(ThemeSnapshot).where(ThemeSnapshot.theme_id == theme_id)
     if exclude_run_id:
         stmt = stmt.where(ThemeSnapshot.run_id != exclude_run_id)
@@ -173,17 +303,34 @@ async def theme_history(
     return result.scalars().all()
 
 
+async def snapshots_for_run(
+    session: AsyncSession, run_id: str
+) -> Sequence[tuple[ThemeSnapshot, Theme]]:
+    """Every theme's standing in one run, for rebuilding a past result."""
+    result = await session.execute(
+        select(ThemeSnapshot, Theme)
+        .join(Theme, Theme.id == ThemeSnapshot.theme_id)
+        .where(ThemeSnapshot.run_id == run_id)
+        .order_by(desc(ThemeSnapshot.impact_score))
+    )
+    return [(row[0], row[1]) for row in result.all()]
+
+
 # --------------------------------------------------------------------------
 # Items
 # --------------------------------------------------------------------------
 
 
 async def save_items(
-    session: AsyncSession, run_id: str, items: list[dict[str, Any]]
+    session: AsyncSession,
+    run_id: str,
+    items: list[dict[str, Any]],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> None:
     session.add_all(
         [
             FeedbackItem(
+                workspace_id=workspace_id,
                 run_id=run_id,
                 external_id=str(item.get("id", "")),
                 text=item.get("text", ""),
@@ -205,8 +352,49 @@ async def save_items(
     await session.commit()
 
 
-async def count_items_for_theme(session: AsyncSession, theme_id: str) -> int:
+async def items_for_theme(
+    session: AsyncSession,
+    theme_id: str,
+    *,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    limit: int = 50,
+    offset: int = 0,
+) -> Sequence[FeedbackItem]:
+    """The evidence behind a theme — the whole point of "with the evidence"."""
     result = await session.execute(
-        select(func.count(FeedbackItem.id)).where(FeedbackItem.theme_id == theme_id)
+        select(FeedbackItem)
+        .where(
+            FeedbackItem.theme_id == theme_id,
+            FeedbackItem.workspace_id == workspace_id,
+        )
+        .order_by(desc(FeedbackItem.severity), FeedbackItem.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return result.scalars().all()
+
+
+async def items_for_run(
+    session: AsyncSession, run_id: str, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> Sequence[FeedbackItem]:
+    result = await session.execute(
+        select(FeedbackItem)
+        .where(
+            FeedbackItem.run_id == run_id,
+            FeedbackItem.workspace_id == workspace_id,
+        )
+        .order_by(FeedbackItem.id)
+    )
+    return result.scalars().all()
+
+
+async def count_items_for_theme(
+    session: AsyncSession, theme_id: str, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> int:
+    result = await session.execute(
+        select(func.count(FeedbackItem.id)).where(
+            FeedbackItem.theme_id == theme_id,
+            FeedbackItem.workspace_id == workspace_id,
+        )
     )
     return int(result.scalar_one())

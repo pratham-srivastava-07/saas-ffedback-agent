@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator
 from app.graph.build import build_graph, initial_state, run_config
 from app.llm import Runtime
 from app.store import repo
+from app.store.models import DEFAULT_WORKSPACE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -83,13 +84,20 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _persist(runtime: Runtime, run_id: str, state: dict[str, Any]) -> None:
+async def _persist(
+    runtime: Runtime,
+    run_id: str,
+    state: dict[str, Any],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> None:
     if runtime.session_factory is None:
         return
 
     response = build_response(state)
     async with runtime.session_factory() as session:
-        await repo.save_items(session, run_id, response["analyzed"])
+        await repo.save_items(
+            session, run_id, response["analyzed"], workspace_id=workspace_id
+        )
         await repo.finish_run(
             session,
             run_id,
@@ -98,6 +106,11 @@ async def _persist(runtime: Runtime, run_id: str, state: dict[str, Any]) -> None
             item_count=len(response["analyzed"]),
             rejected_count=len(response["rejected"]),
             theme_count=len(response["themes"]),
+            # Stored rather than recomputed later: "emerging" depends on
+            # whether the theme was new at the time, which snapshots do not
+            # record, so reconstruction would relabel first appearances.
+            trends=response["trends"],
+            recommendations=response["recommendations"],
         )
 
 
@@ -108,11 +121,13 @@ async def _mark_failed(runtime: Runtime, run_id: str, error: str) -> None:
         await repo.finish_run(session, run_id, status="failed", error=error[:500])
 
 
-async def _start_run(runtime: Runtime) -> str:
+async def _start_run(
+    runtime: Runtime, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> str:
     run_id = str(uuid.uuid4())
     if runtime.session_factory is not None:
         async with runtime.session_factory() as session:
-            await repo.create_run(session, run_id)
+            await repo.create_run(session, run_id, workspace_id=workspace_id)
     return run_id
 
 
@@ -121,17 +136,21 @@ async def _start_run(runtime: Runtime) -> str:
 # --------------------------------------------------------------------------
 
 
-async def analyze(runtime: Runtime, raw_feedback: list[dict]) -> dict[str, Any]:
-    run_id = await _start_run(runtime)
+async def analyze(
+    runtime: Runtime,
+    raw_feedback: list[dict],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> dict[str, Any]:
+    run_id = await _start_run(runtime, workspace_id)
     try:
         final = await get_graph().ainvoke(
-            initial_state(run_id, raw_feedback), run_config(runtime)
+            initial_state(run_id, raw_feedback, workspace_id), run_config(runtime)
         )
     except Exception as exc:
         await _mark_failed(runtime, run_id, str(exc))
         raise
 
-    await _persist(runtime, run_id, final)
+    await _persist(runtime, run_id, final, workspace_id)
     return build_response(final)
 
 
@@ -163,14 +182,16 @@ def _node_stats(node: str, output: Any) -> dict[str, Any]:
 
 
 async def analyze_stream(
-    runtime: Runtime, raw_feedback: list[dict]
+    runtime: Runtime,
+    raw_feedback: list[dict],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> AsyncIterator[str]:
     """Yield SSE frames as the graph executes.
 
     This is what turns the dashboard from a spinner into something that shows
     the pipeline actually working.
     """
-    run_id = await _start_run(runtime)
+    run_id = await _start_run(runtime, workspace_id)
     yield _sse("run_start", {"run_id": run_id, "nodes": sorted(NODE_NAMES)})
 
     root_id: str | None = None
@@ -179,7 +200,9 @@ async def analyze_stream(
 
     try:
         async for event in get_graph().astream_events(
-            initial_state(run_id, raw_feedback), run_config(runtime), version="v2"
+            initial_state(run_id, raw_feedback, workspace_id),
+            run_config(runtime),
+            version="v2",
         ):
             if root_id is None:
                 root_id = event.get("run_id")
@@ -215,5 +238,5 @@ async def analyze_stream(
         yield _sse("error", {"run_id": run_id, "message": "No final state produced."})
         return
 
-    await _persist(runtime, run_id, final_state)
+    await _persist(runtime, run_id, final_state, workspace_id)
     yield _sse("complete", build_response(final_state))

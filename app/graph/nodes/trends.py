@@ -117,6 +117,9 @@ async def detect_trends(state: AnalysisState, config=None) -> dict:
                 neutral=breakdown.get("neutral", 0),
                 negative=breakdown.get("negative", 0),
                 churn_risk_count=theme.get("churn_risk_count", 0),
+                # Carried so a past run's ranked view can be rebuilt exactly.
+                impact_score=float(theme.get("impact_score", 0.0)),
+                is_new=bool(theme.get("is_new", False)),
             )
 
     return {"trends": trends}

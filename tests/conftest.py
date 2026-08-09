@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api.auth import generate_api_key, hash_api_key
 from app.config import Settings
 from app.llm import Runtime
-from app.store.models import Base
+from app.store import repo
+from app.store.migrate import upgrade
+from app.store.models import DEFAULT_WORKSPACE_ID
 from tests.fakes import FakeChat, FakeEmbeddings
 
 
@@ -18,16 +23,23 @@ def settings() -> Settings:
         min_snapshots_for_trend=3,
         theme_merge_threshold=0.82,
         cluster_distance_threshold=0.35,
+        # High enough that ordinary tests never trip it; the rate-limit tests
+        # build their own limiter with a tiny capacity.
+        rate_limit_requests=10_000,
     )
 
 
 @pytest_asyncio.fixture
 async def session_factory(tmp_path):
     """File-backed SQLite. An in-memory URL would hand each new connection a
-    fresh empty database, which silently breaks anything spanning sessions."""
+    fresh empty database, which silently breaks anything spanning sessions.
+
+    Built through the real startup path rather than ``create_all`` so the
+    default workspace exists — otherwise the tests only pass because SQLite
+    leaves foreign-key enforcement off by default.
+    """
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/test.db")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await upgrade(engine)
     yield async_sessionmaker(engine, expire_on_commit=False)
     await engine.dispose()
 
@@ -50,6 +62,33 @@ async def runtime(settings, session_factory, chat) -> Runtime:
 @pytest.fixture
 def config(runtime) -> dict:
     return {"configurable": {"runtime": runtime}, "recursion_limit": 50}
+
+
+@dataclass
+class WorkspaceHandle:
+    id: str
+    api_key: str
+
+
+@pytest_asyncio.fixture
+async def workspace(session_factory) -> WorkspaceHandle:
+    """A real workspace with a real key, so tests exercise the auth path."""
+    api_key = generate_api_key()
+    async with session_factory() as session:
+        created = await repo.create_workspace(
+            session, name="Test workspace", api_key_hash=hash_api_key(api_key)
+        )
+    return WorkspaceHandle(id=created.id, api_key=api_key)
+
+
+@pytest_asyncio.fixture
+async def other_workspace(session_factory) -> WorkspaceHandle:
+    api_key = generate_api_key()
+    async with session_factory() as session:
+        created = await repo.create_workspace(
+            session, name="Other workspace", api_key_hash=hash_api_key(api_key)
+        )
+    return WorkspaceHandle(id=created.id, api_key=api_key)
 
 
 @pytest.fixture

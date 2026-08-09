@@ -33,6 +33,7 @@ from app.graph.nodes import (
 )
 from app.graph.state import AnalysisState
 from app.llm import Runtime
+from app.store.models import DEFAULT_WORKSPACE_ID
 
 
 def fan_out_to_analysis(state: AnalysisState) -> list[Send] | str:
@@ -109,9 +110,14 @@ def build_graph():
     return workflow.compile()
 
 
-def initial_state(run_id: str, raw_feedback: list[dict]) -> AnalysisState:
+def initial_state(
+    run_id: str,
+    raw_feedback: list[dict],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> AnalysisState:
     return {
         "run_id": run_id,
+        "workspace_id": workspace_id,
         "raw": raw_feedback,
         "clean": [],
         "rejected": [],

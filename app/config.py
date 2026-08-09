@@ -19,12 +19,38 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./sentilytics.db"
 
     # --- http ------------------------------------------------------------
-    # A wildcard origin combined with allow_credentials is rejected by
-    # browsers, so the allowed origins are named explicitly.
-    cors_origins: list[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+    # Comma-separated rather than a JSON list so it can be set from a plain
+    # environment variable without shell-quoting a JSON array. A wildcard
+    # origin combined with allow_credentials is rejected by browsers, so
+    # origins are always named explicitly.
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    # --- auth ------------------------------------------------------------
+    # Off by default: a deployed instance must not accept anonymous requests,
+    # because /analyze spends real money on every call. Turn this on only for
+    # local single-user work, where it maps unkeyed requests to the default
+    # workspace.
+    allow_anonymous_access: bool = False
+
+    # --- rate limiting ---------------------------------------------------
+    # In-process token bucket, per workspace. Deliberately no Redis: this is
+    # per-process, so N workers means N times the limit. Documented, not
+    # hidden — it is a real limitation of the simple approach.
+    rate_limit_requests: int = 30
+    rate_limit_window_seconds: int = 60
+
+    # --- run hygiene -----------------------------------------------------
+    # A crash leaves a run stuck at "running" forever; startup fails anything
+    # older than this.
+    stale_run_minutes: int = 30
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.cors_origins.split(",")
+            if origin.strip()
+        ]
 
     # --- request bounds --------------------------------------------------
     max_items_per_request: int = 200

@@ -17,6 +17,7 @@ from app.graph.state import AnalysisState
 from app.graph.vectors import cosine_similarity
 from app.llm import get_runtime
 from app.store import repo
+from app.store.models import DEFAULT_WORKSPACE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,12 @@ async def resolve_taxonomy(state: AnalysisState, config=None) -> dict:
         return {"themes": [_as_new(cluster) for cluster in clusters]}
 
     threshold = runtime.settings.theme_merge_threshold
+    workspace_id = state.get("workspace_id", DEFAULT_WORKSPACE_ID)
 
     async with runtime.session_factory() as session:
-        stored = list(await repo.load_themes(session))
+        # Scoped: matching against another tenant's centroids would merge two
+        # unrelated taxonomies into one and corrupt both.
+        stored = list(await repo.load_themes(session, workspace_id))
 
         themes: list[dict] = []
         # A stored theme may only absorb one cluster per run; otherwise two

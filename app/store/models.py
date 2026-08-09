@@ -4,28 +4,69 @@ The taxonomy lives here. ``Theme.centroid`` is what makes themes stable across
 runs: a new cluster is compared against stored centroids rather than being
 re-named from scratch, which is the direct fix for the old behaviour where
 "Signup bug" and "Bug in Signup Flow" were different themes every run.
+
+Everything is scoped to a :class:`Workspace`. Without that, two tenants of one
+deployment share a taxonomy — company A's "Billing issues" absorbs company B's
+— which makes themes and trends meaningless the moment a second user appears.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+# Single-user installs, the demo seeder and every pre-tenancy row land here.
+DEFAULT_WORKSPACE_ID = "default"
+DEFAULT_WORKSPACE_NAME = "Default workspace"
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    """Naive UTC.
+
+    The columns are plain ``DateTime``, so SQLite hands back naive values on
+    reload. Storing aware ones meant a freshly-created object and the same row
+    re-read compared as different types, which blows up any datetime
+    comparison against them.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
     pass
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+
+    # Only ever the SHA-256 of the key. The key itself is shown once, at
+    # creation, and is not recoverable afterwards.
+    api_key_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class Run(Base):
     __tablename__ = "runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), index=True, default=DEFAULT_WORKSPACE_ID
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     status: Mapped[str] = mapped_column(String(16), default="running")
     item_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -33,6 +74,13 @@ class Run(Base):
     theme_count: Mapped[int] = mapped_column(Integer, default=0)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Trends are stored rather than recomputed from snapshots because the
+    # "emerging" verdict depends on whether the theme was new *at the time*,
+    # which no snapshot records. Reconstruction would silently relabel every
+    # first appearance.
+    trends: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    recommendations: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     items: Mapped[list[FeedbackItem]] = relationship(
         back_populates="run", cascade="all, delete-orphan"
@@ -43,6 +91,9 @@ class Theme(Base):
     __tablename__ = "themes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), index=True, default=DEFAULT_WORKSPACE_ID
+    )
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
 
@@ -62,6 +113,9 @@ class FeedbackItem(Base):
     __tablename__ = "feedback_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), index=True, default=DEFAULT_WORKSPACE_ID
+    )
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
     external_id: Mapped[str] = mapped_column(String(128))
     text: Mapped[str] = mapped_column(Text)
@@ -85,6 +139,8 @@ class FeedbackItem(Base):
 
 
 class ThemeSnapshot(Base):
+    """One theme's standing in one run. Scoped via its theme."""
+
     __tablename__ = "theme_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -104,3 +160,7 @@ class ThemeSnapshot(Base):
     neutral: Mapped[int] = mapped_column(Integer, default=0)
     negative: Mapped[int] = mapped_column(Integer, default=0)
     churn_risk_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Kept so a past run's ranked view can be rebuilt exactly as it was shown.
+    impact_score: Mapped[float] = mapped_column(Float, default=0.0)
+    is_new: Mapped[bool] = mapped_column(Boolean, default=False)
