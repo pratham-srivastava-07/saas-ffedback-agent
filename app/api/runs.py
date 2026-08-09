@@ -49,6 +49,58 @@ async def get_run(
         return _serialize(run)
 
 
+@router.get("/{run_id}/scatter")
+async def get_run_scatter(
+    run_id: str,
+    session_factory=Depends(session_factory_dep),
+    workspace_id: str = Depends(workspace_dep),
+):
+    """The run's embedding space as a 3D point cloud.
+
+    One point per feedback item, coloured by theme. Coordinates come from a
+    PCA fit **on this run alone**, so they are normalised to roughly [-1, 1]
+    but are not comparable with any other run's — never plot two runs on
+    shared axes.
+
+    Items analysed before the projection existed, or whose projection failed,
+    are omitted rather than defaulted to the origin, which would pile
+    unrelated feedback into a fake cluster.
+    """
+    async with session_factory() as session:
+        run = await repo.get_run(session, run_id, workspace_id=workspace_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        items = await repo.items_for_run(session, run_id, workspace_id=workspace_id)
+        snapshots = await repo.snapshots_for_run(session, run_id)
+
+    theme_names = {theme.id: theme.name for _snapshot, theme in snapshots}
+
+    points = [
+        {
+            "item_id": item.external_id,
+            "theme_id": item.theme_id,
+            "theme_name": theme_names.get(item.theme_id),
+            "x": item.x,
+            "y": item.y,
+            "z": item.z,
+            "sentiment": item.sentiment,
+            "severity": item.severity,
+            "text": item.text,
+        }
+        for item in items
+        if item.x is not None and item.y is not None and item.z is not None
+    ]
+
+    return {
+        "points": points,
+        "themes": [
+            {"id": theme.id, "name": theme.name, "count": snapshot.count}
+            for snapshot, theme in snapshots
+        ],
+    }
+
+
 @router.get("/{run_id}/result")
 async def get_run_result(
     run_id: str,

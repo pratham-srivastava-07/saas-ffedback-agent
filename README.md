@@ -199,13 +199,54 @@ runs rather than being reinvented each time.
 
 ---
 
-## Workspaces and auth
+## Accounts, workspaces and auth
 
 Everything — runs, themes, feedback, trend history — is scoped to a **workspace**.
 Without that, two users of one deployment would share a taxonomy: company A's
 "Billing issues" would absorb company B's and corrupt both.
 
-Create one, and note the key it prints:
+### Signing up
+
+```bash
+curl -X POST localhost:8000/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"pm@acme.com","password":"correct-horse-battery","workspace_name":"Acme Product"}'
+```
+
+```json
+{ "api_key": "sk_...", "email": "pm@acme.com",
+  "workspace": { "id": "d503647d-...", "name": "Acme Product" } }
+```
+
+Signup creates the user, their workspace and its API key in one transaction.
+Passwords are hashed with **`hashlib.scrypt`** and a per-user random salt — standard
+library, no bcrypt or argon2 dependency. Minimum 8 characters.
+
+`POST /auth/login` verifies the password and returns an API key; `GET /auth/me`
+reports who a key belongs to.
+
+### The deliberate trade: no sessions
+
+Login returns the **workspace API key**, not a session token. The key auth the rest
+of the API already uses stays the single source of truth, and there is no second
+credential system to keep consistent. The client stores the key and sends it as
+`X-API-Key` on every call.
+
+Two consequences worth knowing:
+
+- The key is only as safe as the client's storage. There is no server-side session
+  to invalidate.
+- **Logging in rotates the key.** Only its hash is stored, so the previous key
+  genuinely cannot be handed back — a new one is issued and the old one stops
+  working. Logging in on a second device therefore signs the first one out.
+
+That is fine for one-workspace-per-user. Multi-device use or token revocation would
+need real sessions.
+
+### Keys without an account
+
+For scripts and local work you can create a workspace directly, with no user
+attached (`GET /auth/me` then reports `email: null`):
 
 ```bash
 python scripts/create_workspace.py "Acme Product Team"
@@ -240,6 +281,9 @@ fine for a single node, and the point at which to move it to Redis.
 
 | Endpoint | Purpose |
 |---|---|
+| `POST /auth/signup` | Create a user, workspace and API key |
+| `POST /auth/login` | Verify a password, return a freshly rotated API key |
+| `GET /auth/me` | Who the current key belongs to |
 | `POST /analyze` | Run the pipeline, return the full result |
 | `POST /analyze/stream` | Same, streamed as SSE per node — consume with `fetch` + `ReadableStream` |
 | `POST /analyze/csv` | Upload a CSV export directly |
@@ -248,6 +292,7 @@ fine for a single node, and the point at which to move it to Redis.
 | `GET /themes/{id}/items` | **The evidence** — paginated feedback behind a theme |
 | `GET /runs`, `GET /runs/{id}` | Run history |
 | `GET /runs/{id}/result` | Rebuild a past run in full: items, themes, trends, recommendations |
+| `GET /runs/{id}/scatter` | The run's embedding space as a 3D point cloud |
 | `GET /graph` | The live pipeline topology as mermaid |
 | `GET /health` | Unauthenticated, for load balancers |
 
@@ -267,6 +312,36 @@ curl -H "X-API-Key: sk_..." -F "file=@zendesk-export.csv" \
 
 Unrecognised values in a tier or source column fall back rather than rejecting the
 upload — a stray `Platinum` should not cost you the whole file.
+
+---
+
+## The 3D cluster explorer
+
+`GET /runs/{id}/scatter` returns one point per feedback item, positioned by a PCA
+projection of the run's real embedding space and tagged with its theme:
+
+```json
+{ "points": [{ "item_id": "1", "theme_id": "...", "theme_name": "Signup issues",
+               "x": 0.83, "y": -0.21, "z": 0.05,
+               "sentiment": "negative", "severity": 5, "text": "Signup is broken" }],
+  "themes": [{ "id": "...", "name": "Signup issues", "count": 3 }] }
+```
+
+Coordinates are normalised to roughly [-1, 1] with a single global scale factor,
+not per-axis — per-axis would stretch the cloud and misrepresent the relative
+distances the plot exists to show.
+
+**PCA is fit per run, so coordinates are not comparable between runs.** Each run has
+its own basis; two runs must never share axes. That is why the endpoint is per-run.
+
+Only the projection is stored, not the underlying 768-dimension vector: the scatter
+plot is its only consumer and SQLite is not a vector store. The cost of that choice
+is that changing projection method later (t-SNE, UMAP) means re-running analysis
+rather than re-projecting stored vectors.
+
+Degenerate cases are handled rather than raising — a single item, or items whose
+embeddings are identical, collapse to the origin, which is the honest picture rather
+than an error.
 
 ---
 

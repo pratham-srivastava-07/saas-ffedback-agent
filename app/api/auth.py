@@ -12,14 +12,28 @@ would need bcrypt/argon2; this does not.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Header, HTTPException, Request
 
 from app.store import repo
 from app.store.models import DEFAULT_WORKSPACE_ID
 
 API_KEY_HEADER = "X-API-Key"
+
+MIN_PASSWORD_LENGTH = 8
+PASSWORD_RULES = (
+    f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
+)
+
+# scrypt work factors. n=2**14 with r=8 costs roughly 16MB and ~50ms per
+# hash, which is slow enough to matter to an attacker and fast enough that a
+# login is not noticeable.
+_SCRYPT_N = 2**14
+_SCRYPT_R = 8
+_SCRYPT_P = 1
+_SCRYPT_DKLEN = 64
 
 
 def generate_api_key() -> str:
@@ -28,6 +42,50 @@ def generate_api_key() -> str:
 
 def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+# --------------------------------------------------------------------------
+# Passwords
+# --------------------------------------------------------------------------
+
+
+def generate_salt() -> str:
+    return secrets.token_hex(16)
+
+
+def hash_password(password: str, salt: str) -> str:
+    """scrypt from the standard library — no bcrypt/argon2 dependency.
+
+    Unlike the API keys (high-entropy random tokens, where a plain SHA-256 is
+    fine), passwords are user-chosen and low-entropy, so they need a slow
+    salted KDF.
+    """
+    digest = hashlib.scrypt(
+        password.encode("utf-8"),
+        salt=bytes.fromhex(salt),
+        n=_SCRYPT_N,
+        r=_SCRYPT_R,
+        p=_SCRYPT_P,
+        dklen=_SCRYPT_DKLEN,
+    )
+    return digest.hex()
+
+
+def verify_password(password: str, salt: str, expected_hash: str) -> bool:
+    try:
+        candidate = hash_password(password, salt)
+    except ValueError:
+        return False
+    return hmac.compare_digest(candidate, expected_hash)
+
+
+def waste_time_like_a_password_check() -> None:
+    """Burn the same work as a real verification.
+
+    Without this, an unknown email returns noticeably faster than a wrong
+    password, which turns the login endpoint into an account enumerator.
+    """
+    hash_password("dummy-password", generate_salt())
 
 
 async def workspace_dep(

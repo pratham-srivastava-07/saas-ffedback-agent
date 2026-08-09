@@ -60,6 +60,30 @@ class Workspace(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
+class User(Base):
+    """An email/password login that owns exactly one workspace.
+
+    Login returns that workspace's API key rather than minting a session, so
+    the key auth built earlier stays the single source of truth and there is
+    no second credential system to keep consistent.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+
+    # scrypt digest and its per-user random salt, both hex. stdlib only —
+    # no bcrypt/argon2 dependency for this.
+    password_hash: Mapped[str] = mapped_column(String(256))
+    salt: Mapped[str] = mapped_column(String(64))
+
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class Run(Base):
     __tablename__ = "runs"
 
@@ -134,6 +158,15 @@ class FeedbackItem(Base):
     )
     status: Mapped[str] = mapped_column(String(16), default="ok")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # PCA projection of this item's embedding, for the 3D cluster explorer.
+    # Only the projection is stored, not the 768-dim vector: the scatter plot
+    # is its only consumer and SQLite is not a vector store. The trade is that
+    # PCA is fit per run, so coordinates from two runs are in different bases
+    # and must never be plotted on shared axes.
+    x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    z: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     run: Mapped[Run] = relationship(back_populates="items")
 

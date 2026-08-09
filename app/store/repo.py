@@ -21,6 +21,7 @@ from app.store.models import (
     Run,
     Theme,
     ThemeSnapshot,
+    User,
     Workspace,
     _utcnow,
 )
@@ -66,6 +67,56 @@ async def workspace_by_key_hash(
 async def list_workspaces(session: AsyncSession) -> Sequence[Workspace]:
     result = await session.execute(select(Workspace).order_by(Workspace.created_at))
     return result.scalars().all()
+
+
+# --------------------------------------------------------------------------
+# Users
+# --------------------------------------------------------------------------
+
+
+async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
+    result = await session.execute(
+        select(User).where(User.email == email.strip().lower())
+    )
+    return result.scalars().first()
+
+
+async def get_user_for_workspace(
+    session: AsyncSession, workspace_id: str
+) -> User | None:
+    result = await session.execute(
+        select(User).where(User.workspace_id == workspace_id)
+    )
+    return result.scalars().first()
+
+
+async def create_user_with_workspace(
+    session: AsyncSession,
+    *,
+    email: str,
+    password_hash: str,
+    salt: str,
+    workspace_name: str,
+    api_key_hash: str,
+) -> tuple[User, Workspace]:
+    """Signup, in one transaction.
+
+    A user without a workspace, or a workspace without its key, would both be
+    unusable accounts, so all three rows commit together or not at all.
+    """
+    workspace = Workspace(
+        id=str(uuid.uuid4()), name=workspace_name, api_key_hash=api_key_hash
+    )
+    user = User(
+        id=str(uuid.uuid4()),
+        email=email.strip().lower(),
+        password_hash=password_hash,
+        salt=salt,
+        workspace_id=workspace.id,
+    )
+    session.add_all([workspace, user])
+    await session.commit()
+    return user, workspace
 
 
 # --------------------------------------------------------------------------
@@ -345,6 +396,9 @@ async def save_items(
                 theme_id=item.get("theme_id"),
                 status=item.get("status", "ok"),
                 error=item.get("error"),
+                x=item.get("x"),
+                y=item.get("y"),
+                z=item.get("z"),
             )
             for item in items
         ]

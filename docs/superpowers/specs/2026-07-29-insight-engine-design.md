@@ -294,6 +294,66 @@ reports wrong merges against wrong splits.
 It reports that offline mode *cannot* answer the question rather than presenting a
 tie-break artifact as a recommendation.
 
+## Phase 3 — accounts and the cluster explorer
+
+Added to support frontend decisions made after phase 2, against contracts fixed by
+the coordinator while the UI was built in parallel.
+
+### Email/password accounts
+
+A `User` owns exactly one workspace. Passwords use **`hashlib.scrypt`** with a
+per-user random salt — standard library, no bcrypt/argon2 dependency. This is the
+opposite of the API-key decision, deliberately: keys are high-entropy random tokens
+where a plain SHA-256 is fine, whereas passwords are user-chosen and low-entropy and
+need a slow salted KDF.
+
+Signup writes the user, workspace and key hash in one transaction — a user without a
+workspace, or a workspace without a key, are both unusable accounts.
+
+**Login returns the workspace API key rather than a session token.** The key auth
+built in phase 2 stays the single source of truth, and there is no second credential
+system to keep consistent. Two consequences, documented rather than hidden:
+
+1. There is no server-side session to revoke; the key is only as safe as client
+   storage.
+2. **Logging in rotates the key**, because only its hash is stored and the old one
+   genuinely cannot be recovered. Signing in on a second device signs the first out.
+
+That is acceptable for one-workspace-per-user. Multi-device use would need sessions.
+
+Login answers identically for an unknown email and a wrong password, and burns
+equivalent scrypt work on the unknown-email path, so the endpoint cannot be used to
+enumerate accounts by response or by timing.
+
+### 3D projection
+
+Embeddings previously existed only in graph state and were discarded, so there was
+nothing to plot. Each run's embeddings are now PCA-projected to three components and
+stored as `x, y, z` per feedback item.
+
+**Only the projection is stored, not the vector.** The scatter plot is its only
+consumer and SQLite is not a vector store. The cost is that switching projection
+method later means re-running analysis rather than re-projecting.
+
+**PCA is fit per run**, so coordinates from different runs sit in different bases and
+are not comparable — hence a per-run endpoint, and an explicit warning in the README
+against sharing axes.
+
+**The projection runs in the persistence layer, not as a graph node.** A node would
+be architecturally tidier, but `/analyze/stream` publishes `NODE_NAMES` in its
+`run_start` frame and the frontend renders that list; adding a node during parallel
+UI work risked breaking it for a purely cosmetic gain. The projection has no bearing
+on themes, trends or recommendations — it exists solely so stored items can be
+plotted — so persistence is a defensible home.
+
+Normalisation uses a single global scale factor rather than per-axis, which would
+stretch the cloud and misrepresent the relative distances the plot exists to show.
+
+Degenerate cases return the origin instead of raising: fewer than two items, fewer
+than three available components (padded), and identical vectors, where zero variance
+would otherwise make sklearn emit NaN through a divide-by-zero. A scatter plot is a
+nice-to-have and must never be able to fail a run.
+
 ## Out of scope
 
 Billing, and ingestion connectors beyond CSV (Zendesk, Intercom and App Store APIs).

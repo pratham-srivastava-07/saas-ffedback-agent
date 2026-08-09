@@ -34,7 +34,14 @@ _ADDITIONS: dict[str, list[tuple[str, str]]] = {
         ("recommendations", "JSON"),
     ],
     "themes": [("workspace_id", _WORKSPACE_COLUMN)],
-    "feedback_items": [("workspace_id", _WORKSPACE_COLUMN)],
+    "feedback_items": [
+        ("workspace_id", _WORKSPACE_COLUMN),
+        # 3D projection for the cluster explorer; null for rows analysed
+        # before it existed.
+        ("x", "FLOAT"),
+        ("y", "FLOAT"),
+        ("z", "FLOAT"),
+    ],
     "theme_snapshots": [
         ("impact_score", "FLOAT NOT NULL DEFAULT 0.0"),
         ("is_new", "BOOLEAN NOT NULL DEFAULT 0"),

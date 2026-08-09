@@ -9,6 +9,7 @@ from typing import Any, AsyncIterator
 
 from app.graph.build import build_graph, initial_state, run_config
 from app.llm import Runtime
+from app.projection import project_to_3d
 from app.store import repo
 from app.store.models import DEFAULT_WORKSPACE_ID
 
@@ -84,6 +85,13 @@ def build_response(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _coords_for(coordinates: dict, item_id: str) -> dict[str, float | None]:
+    point = coordinates.get(item_id)
+    if point is None:
+        return {"x": None, "y": None, "z": None}
+    return {"x": point[0], "y": point[1], "z": point[2]}
+
+
 async def _persist(
     runtime: Runtime,
     run_id: str,
@@ -94,9 +102,20 @@ async def _persist(
         return
 
     response = build_response(state)
+
+    # Projected here rather than in a graph node: it has no bearing on
+    # themes, trends or recommendations, and exists solely so stored items
+    # can be plotted later. Keeping it out of the graph also keeps the node
+    # list the streaming UI renders stable.
+    coordinates = project_to_3d(state.get("embeddings", {}))
+    stored_items = [
+        {**item, **_coords_for(coordinates, item["id"])}
+        for item in response["analyzed"]
+    ]
+
     async with runtime.session_factory() as session:
         await repo.save_items(
-            session, run_id, response["analyzed"], workspace_id=workspace_id
+            session, run_id, stored_items, workspace_id=workspace_id
         )
         await repo.finish_run(
             session,
