@@ -354,8 +354,70 @@ than three available components (padded), and identical vectors, where zero vari
 would otherwise make sklearn emit NaN through a divide-by-zero. A scatter plot is a
 nice-to-have and must never be able to fail a run.
 
+## Phase 4 — the frontend
+
+The header above says "UI is designed and approved separately" and "Scope: Backend
+only." That was true when this spec was written; the frontend has since been built
+in `ui/` and this section records it, because the decisions below constrain the
+backend contract just as much as anything in Phase 1–3.
+
+### Shape
+
+Next.js 15, App Router, every page a client component (`"use client"`). There is no
+server-side rendering of API data and no BFF — `ui/lib/api.ts` calls the FastAPI
+backend directly from the browser over `fetch`, using `NEXT_PUBLIC_API_URL`
+(default `http://localhost:8000`). That variable is the entire integration surface
+between the two halves of the repo; nothing else about the backend needs to know
+the frontend exists.
+
+Pages: a marketing landing page and `/login` / `/signup`, then `/app` (paste-in or
+CSV analysis with a live SSE view of the pipeline), `/app/themes` and
+`/app/themes/[id]` (taxonomy and evidence), `/app/runs` and `/app/runs/[id]` (history
+and full replay), `/app/explore` (the 3D cluster explorer), and `/app/settings`
+(workspace + API key). Full detail is in `ui/README.md`.
+
+### Auth carries the same key, not a session
+
+`lib/auth.tsx`'s `AuthProvider` holds the API key in `localStorage` and `lib/api.ts`
+attaches it as `X-API-Key` on every call except `/auth/signup`, `/auth/login` and
+`/health`. A 401 from anywhere calls a single registered `onUnauthorized` handler
+that clears the key and drops the app to signed-out — no call site handles 401
+individually. This is a direct consequence of the Phase 3 decision to return the
+workspace key from login rather than a session token: the frontend has no session
+of its own to manage, only this one credential.
+
+### Streaming consumption
+
+`/analyze/stream`'s SSE frames (`run_start`, `node_start`, `node_end`, `error`,
+`complete`) are read by hand off a `fetch` `ReadableStream` in
+`streamAnalyze()` (`lib/api.ts`), not `EventSource` — `EventSource` cannot issue the
+POST the batch requires. `run_start`'s `nodes` list drives `PipelineMonitor`
+(`components/app/pipeline-monitor.tsx`), which is why the Phase 3 decision to keep
+the PCA projection out of the graph (a real node would have changed that list mid
+UI-build) mattered beyond cosmetics.
+
+### The contract is hand-maintained, and was checked
+
+`ui/lib/api.ts`'s TypeScript interfaces are transcribed by hand from
+`app/schemas.py` and the response dicts built in `app/api/*.py` — there is no
+codegen tying them together. As part of finishing this branch, every read endpoint
+(`/health`, `/themes`, `/themes/trends`, `/themes/{id}/items`, `/runs`,
+`/runs/{id}`, `/runs/{id}/result`, `/runs/{id}/scatter`) was exercised against a
+real offline-seeded database (`scripts/seed_demo.py --offline --reset`) running
+with `ALLOW_ANONYMOUS_ACCESS=true`, and every field compared against its TS
+interface by hand. No drift was found — nullability, field names and shapes all
+matched. `/analyze` and `/analyze/stream` could not be exercised the same way (they
+need real LLM keys) but their response shape is guaranteed by
+`response_model=AnalyzeResponse` on the FastAPI route, which `schemas.py` shows
+matches `AnalyzeResponse`/`Theme`/`Trend`/`Recommendation` in `lib/api.ts` field for
+field. `GET /graph` exists and works but nothing in `ui/` calls it — it is not part
+of the frontend contract.
+
+Because this check is manual, not generated, it will drift again the next time
+either side changes a response shape without updating the other. There is no
+regression guard against that beyond doing this check again.
+
 ## Out of scope
 
 Billing, and ingestion connectors beyond CSV (Zendesk, Intercom and App Store APIs).
-Each is its own project. The UI is designed and approved separately; this spec
-changes no file under `ui/` except to document the `NEXT_PUBLIC_API_URL` contract.
+Each is its own project.

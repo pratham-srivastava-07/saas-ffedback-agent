@@ -29,3 +29,33 @@ jobs:
 
       - name: Verify the threshold calibration sweep runs
         run: python scripts/calibrate_threshold.py --offline
+
+  # Kept as its own job, not a step tacked onto `test`: a broken Python
+  # dependency install must not skip the frontend check, and a broken
+  # frontend build must not be hidden behind a green backend job.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # npm ci, not npm install: it requires package-lock.json to be present
+      # and consistent, and fails rather than silently rewriting it, which is
+      # what a clean CI checkout needs.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build

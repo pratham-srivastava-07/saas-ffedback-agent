@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app import service
 from app.api.deps import rate_limited_workspace_dep, runtime_dep, settings_dep
+from app.appstore import AppStoreIngestError, fetch_app_store_reviews
 from app.ingest import ColumnMapping, CsvIngestError, parse_csv
 from app.llm import Runtime
-from app.schemas import AnalyzeRequest, AnalyzeResponse
+from app.schemas import AnalyzeRequest, AnalyzeResponse, AppStoreRequest
 
 router = APIRouter(tags=["analysis"])
 
@@ -79,6 +82,35 @@ async def analyze_csv(
             default_source=default_source,
         )
     except CsvIngestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return await service.analyze(runtime, items, workspace_id)
+
+
+@router.post("/analyze/app-store", response_model=AnalyzeResponse)
+async def analyze_app_store(
+    payload: AppStoreRequest,
+    runtime: Runtime = Depends(runtime_dep),
+    workspace_id: str = Depends(rate_limited_workspace_dep),
+    settings=Depends(settings_dep),
+):
+    """Analyse an app's recent App Store reviews.
+
+    The feed is public, so this is the one ingestion path that needs no
+    credentials from the user at all — paste an app id and get a ranked list.
+    """
+    try:
+        # The fetch is blocking stdlib urllib; off-thread so one slow feed
+        # cannot stall every other request on the event loop.
+        items = await asyncio.to_thread(
+            fetch_app_store_reviews,
+            payload.app_id,
+            country=payload.country,
+            pages=payload.pages,
+            max_items=settings.max_items_per_request,
+            max_chars=settings.max_chars_per_item,
+        )
+    except AppStoreIngestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return await service.analyze(runtime, items, workspace_id)
