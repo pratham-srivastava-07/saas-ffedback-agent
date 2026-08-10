@@ -136,7 +136,7 @@ flowchart TD
 
 - **Backend** — Python, FastAPI, LangGraph
 - **Chat model** — Llama 3.3 70B via Groq (structured output throughout)
-- **Embeddings** — Google `text-embedding-004`
+- **Embeddings** — Google `gemini-embedding-001` (3072-dim)
 - **Clustering** — scikit-learn
 - **Storage** — SQLite via async SQLAlchemy
 - **Frontend** — Next.js 15, Tailwind, shadcn/ui
@@ -376,9 +376,19 @@ than an error.
 
 ## Tuning the merge threshold
 
-`THEME_MERGE_THRESHOLD` (0.82) decides whether a new cluster *is* an existing theme.
-Too low and unrelated problems collapse together; too high and the taxonomy invents
-new themes every run. It is the single number most worth tuning against your data:
+Two numbers govern grouping, and they are the same number from opposite sides:
+`CLUSTER_DISTANCE_THRESHOLD` (0.22) decides whether two items join one cluster, and
+`THEME_MERGE_THRESHOLD` (0.78 similarity = 0.22 distance) decides whether a new
+cluster *is* an existing theme. **Move them together or clustering and the taxonomy
+will disagree.**
+
+Both were measured against `gemini-embedding-001` on a labelled sample: same-topic
+pairs land in 0.070–0.217, different-topic pairs in 0.224–0.309. 0.22 sits in the gap.
+
+That gap is narrow, so re-measure against your own data. When in doubt, err low: an
+over-split shows two themes that should be one, which is visible and irritating. An
+over-merge files praise under a churn-risk bug, which is a lie nothing downstream can
+detect.
 
 ```bash
 python scripts/calibrate_threshold.py          # needs GOOGLE_API_KEY

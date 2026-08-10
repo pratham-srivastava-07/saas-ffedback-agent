@@ -41,6 +41,25 @@ async def resolve_taxonomy(state: AnalysisState, config=None) -> dict:
         # unrelated taxonomies into one and corrupt both.
         stored = list(await repo.load_themes(session, workspace_id))
 
+        # Centroids from a different embedding model have a different length,
+        # and cosine_similarity scores those 0.0. Left unsaid, switching model
+        # would look like every theme suddenly being brand new, run after run,
+        # with no error anywhere — so say it out loud.
+        if stored and clusters:
+            current_dims = len(clusters[0]["centroid"])
+            stale = [t for t in stored if len(t.centroid or []) != current_dims]
+            if stale:
+                logger.warning(
+                    "%d of %d stored themes were embedded at a different "
+                    "dimension (%d vs %d) and cannot be matched. The embedding "
+                    "model has changed; re-seed with --reset or those themes "
+                    "will be recreated on every run.",
+                    len(stale),
+                    len(stored),
+                    len(stale[0].centroid or []),
+                    current_dims,
+                )
+
         themes: list[dict] = []
         # A stored theme may only absorb one cluster per run; otherwise two
         # distinct clusters could collapse into a single theme and we would

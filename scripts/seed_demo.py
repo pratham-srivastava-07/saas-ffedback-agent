@@ -26,7 +26,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 from app import service  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.llm import Runtime, build_runtime  # noqa: E402
+from app.store import repo  # noqa: E402
 from app.store.migrate import upgrade  # noqa: E402
+from app.store.models import DEFAULT_WORKSPACE_ID  # noqa: E402
 from scripts.demo_data import weeks_with_ids  # noqa: E402
 
 DEFAULT_DB = REPO_ROOT / "sentilytics.db"
@@ -63,16 +65,52 @@ def _offline_runtime(session_factory) -> Runtime:
     )
 
 
-async def seed(database: Path, offline: bool, reset: bool) -> int:
+async def seed(
+    database: Path,
+    offline: bool,
+    reset: bool,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+) -> int:
+    # --reset deletes the database, which deletes the workspace being named.
+    # Refuse rather than wipe the account and then fail the lookup.
+    if reset and workspace_id != DEFAULT_WORKSPACE_ID:
+        print(
+            "--reset and --workspace cannot be combined: resetting deletes the\n"
+            "database, and with it the workspace you are seeding into.\n\n"
+            "Seed into your workspace without --reset — taxonomy matching is\n"
+            "scoped per workspace, so older data elsewhere cannot interfere."
+        )
+        return 1
+
     if reset and database.exists():
-        database.unlink()
-        print(f"Removed existing database at {database}")
+        try:
+            database.unlink()
+            print(f"Removed existing database at {database}")
+        except PermissionError:
+            print(
+                f"Cannot delete {database} — another process is holding it open.\n"
+                "Stop the running backend (Ctrl+C in its terminal) and try again."
+            )
+            return 1
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{database}")
     # Goes through the real startup path so the default workspace exists;
-    # the demo seeds into it.
+    # the demo seeds into it unless told otherwise.
     await upgrade(engine)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    # Seeding into a workspace that does not exist would produce rows nobody
+    # can ever read, so fail before spending a single API call on it.
+    if workspace_id != DEFAULT_WORKSPACE_ID:
+        async with session_factory() as session:
+            if await repo.get_workspace(session, workspace_id) is None:
+                print(
+                    f"No workspace with id {workspace_id!r}.\n"
+                    "Find yours under Settings in the app, or omit "
+                    "--workspace to seed the default one."
+                )
+                await engine.dispose()
+                return 1
 
     runtime = (
         _offline_runtime(session_factory)
@@ -82,11 +120,12 @@ async def seed(database: Path, offline: bool, reset: bool) -> int:
 
     weeks = weeks_with_ids()
     print(f"\nReplaying {len(weeks)} weeks through the pipeline"
-          f"{' (offline providers)' if offline else ''}...\n")
+          f"{' (offline providers)' if offline else ''}"
+          f" into workspace {workspace_id}...\n")
 
     result = {}
     for label, items in weeks:
-        result = await service.analyze(runtime, items)
+        result = await service.analyze(runtime, items, workspace_id)
         rejected = len(result["rejected"])
         print(
             f"  {label:<34} {len(result['analyzed']):>2} analysed, "
@@ -148,9 +187,21 @@ def main() -> int:
     parser.add_argument(
         "--database", type=Path, default=DEFAULT_DB, help="SQLite file to write"
     )
+    parser.add_argument(
+        "--workspace",
+        default=DEFAULT_WORKSPACE_ID,
+        help=(
+            "workspace id to seed into (find yours under Settings in the app). "
+            "Defaults to the shared workspace, which is only reachable with "
+            "ALLOW_ANONYMOUS_ACCESS=true — so a signed-in user seeing an empty "
+            "product usually wants this flag."
+        ),
+    )
     args = parser.parse_args()
 
-    return asyncio.run(seed(args.database, args.offline, args.reset))
+    return asyncio.run(
+        seed(args.database, args.offline, args.reset, args.workspace)
+    )
 
 
 if __name__ == "__main__":
