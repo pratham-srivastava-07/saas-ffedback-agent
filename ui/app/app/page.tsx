@@ -39,6 +39,7 @@ import {
   type UserType,
 } from "@/lib/api";
 import { SAMPLE_FEEDBACK } from "@/lib/sample-feedback";
+import { cn } from "@/lib/utils";
 import { Layers } from "lucide-react";
 
 export default function AnalyzePage() {
@@ -194,95 +195,134 @@ export default function AnalyzePage() {
               </button>
             </div>
 
-            <Textarea
-              id="feedback"
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              disabled={running}
-              rows={8}
-              className="mt-2 resize-y font-mono text-[13px]"
-              placeholder={"Signup is broken after the update\nBilling charged me twice"}
-              aria-invalid={Boolean(validation)}
-            />
-
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="font-mono text-xs text-muted-foreground tabular">
-                {lines.length} / {MAX_ITEMS} items
-              </p>
-              {validation && (
-                <p className="text-xs text-destructive" role="alert">
-                  {validation}
-                </p>
-              )}
-            </div>
-
-            {/* Capped: full-width selects for two short enum values would
-                stretch across the whole card and look like an error. */}
-            <div className="mt-5 grid gap-4 sm:max-w-xl sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="tier">Customer tier</Label>
-                <Select
-                  value={userType}
-                  onValueChange={(value) => setUserType(value as UserType)}
+            {/*
+              Text left, controls right. Feedback lines are short, so a
+              full-bleed textarea left most of the row empty; the settings that
+              apply to the batch now fill it instead of stacking underneath and
+              pushing everything down.
+            */}
+            <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+              <div className="min-w-0">
+                <Textarea
+                  id="feedback"
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
                   disabled={running}
-                >
-                  <SelectTrigger id="tier">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
+                  rows={12}
+                  className="resize-y font-mono text-[13px]"
+                  placeholder={
+                    "Signup is broken after the update\nBilling charged me twice"
+                  }
+                  aria-invalid={Boolean(validation)}
+                />
+
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="font-mono text-xs text-muted-foreground tabular">
+                    {lines.length} / {MAX_ITEMS} items
+                  </p>
+                  {validation && (
+                    <p className="text-xs text-destructive" role="alert">
+                      {validation}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                {/*
+                  Three mutually exclusive values, so a segmented control
+                  rather than a select: every option is visible and reachable
+                  in one click instead of two, and there is no popover to
+                  open just to learn what the choices are.
+                */}
+                <fieldset disabled={running} className="grid gap-2">
+                  <legend className="mb-2 text-sm font-medium">
+                    Customer tier
+                  </legend>
+                  <div
+                    role="radiogroup"
+                    aria-label="Customer tier"
+                    className="grid grid-cols-3 gap-1 rounded-md border border-input p-1"
+                  >
                     {USER_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
+                      <button
+                        key={type}
+                        type="button"
+                        role="radio"
+                        aria-checked={userType === type}
+                        onClick={() => setUserType(type)}
+                        className={cn(
+                          "rounded px-2 py-1.5 text-xs capitalize transition-colors",
+                          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                          "disabled:cursor-not-allowed disabled:opacity-50",
+                          userType === type
+                            ? "bg-secondary font-medium text-foreground"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
                         {type}
-                      </SelectItem>
+                      </button>
                     ))}
-                  </SelectContent>
-                </Select>
+                  </div>
+                </fieldset>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="source">Source</Label>
+                  <Select
+                    value={source}
+                    onValueChange={(value) => setSource(value as Source)}
+                    disabled={running}
+                  >
+                    {/* Seven options with no natural order — a select is the
+                        right widget here, just a full-width one. */}
+                    <SelectTrigger id="source" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SOURCES.map((item) => (
+                        <SelectItem key={item} value={item} className="capitalize">
+                          {item.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Applied to every line in this batch. Upload a CSV to set them
+                  per row.{" "}
+                  <Link
+                    href="/app/ingest"
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    Upload a file
+                  </Link>
+                </p>
+
+                {/* mt-auto pins the action to the bottom of the column, level
+                    with the foot of the textarea. */}
+                <div className="mt-auto flex gap-2 pt-2">
+                  <Button
+                    onClick={run}
+                    disabled={!canRun}
+                    className="flex-1"
+                    size="lg"
+                  >
+                    {running ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Play className="size-4" aria-hidden />
+                    )}
+                    {running ? "Running" : "Run analysis"}
+                  </Button>
+                  {running && (
+                    <Button variant="outline" size="lg" onClick={stop}>
+                      <Square className="size-4" aria-hidden />
+                      Stop
+                    </Button>
+                  )}
+                </div>
               </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="source">Source</Label>
-                <Select
-                  value={source}
-                  onValueChange={(value) => setSource(value as Source)}
-                  disabled={running}
-                >
-                  <SelectTrigger id="source">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOURCES.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item.replace(/_/g, " ")}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs text-muted-foreground">
-              Applied to every line in this batch. Upload a CSV to set them per
-              row.{" "}
-              <Link href="/app/ingest" className="text-primary underline-offset-4 hover:underline">
-                Upload a file
-              </Link>
-            </p>
-
-            <div className="mt-5 flex gap-2">
-              <Button onClick={run} disabled={!canRun} className="flex-1" size="lg">
-                {running ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden />
-                ) : (
-                  <Play className="size-4" aria-hidden />
-                )}
-                {running ? "Running" : "Run analysis"}
-              </Button>
-              {running && (
-                <Button variant="outline" size="lg" onClick={stop}>
-                  <Square className="size-4" aria-hidden />
-                  Stop
-                </Button>
-              )}
             </div>
           </div>
 
