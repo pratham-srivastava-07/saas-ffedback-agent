@@ -18,11 +18,20 @@ from tests.fakes import FakeChat, FakeEmbeddings
 @pytest.fixture
 def settings() -> Settings:
     return Settings(
+        # _env_file=None is load-bearing. Without it pydantic-settings reads
+        # the developer's .env for anything not passed here, so a local
+        # ALLOW_ANONYMOUS_ACCESS=true silently switched auth off and made the
+        # test asserting /auth/me rejects a bad key pass against a server that
+        # was accepting everyone. Tests must not depend on local config.
+        _env_file=None,
         groq_api_key="test",
         google_api_key="test",
         min_snapshots_for_trend=3,
-        theme_merge_threshold=0.82,
-        cluster_distance_threshold=0.35,
+        # Pinned rather than inherited from the production defaults: these are
+        # chosen for the fake embedder's orthogonal vectors, and tuning the
+        # real thresholds against real embeddings should not break the suite.
+        theme_merge_threshold=0.78,
+        cluster_distance_threshold=0.22,
         # High enough that ordinary tests never trip it; the rate-limit tests
         # build their own limiter with a tiny capacity.
         rate_limit_requests=10_000,

@@ -167,8 +167,23 @@ merges into the existing theme and updates that centroid as a running mean; belo
 becomes a new theme and gets named. This is the direct fix for themes being renamed
 on every run.
 
-The 0.82 threshold is the number most likely to need tuning against real data. It is
-a single named constant in `config.py`.
+**Both thresholds were corrected on first contact with real embeddings
+(2026-08-11).** The originals — distance 0.35, similarity 0.82 — had only ever been
+exercised against the test suite's fake embedder, whose vectors are orthogonal and
+therefore score exactly 0.0 or 1.0. Any value between the two passes that suite.
+
+Measured against `gemini-embedding-001`: same-topic pairs fall in 0.070–0.217,
+different-topic pairs in 0.224–0.309. At 0.35, **every** unrelated pair in the sample
+merged — a four-item batch of two signup bugs, a billing complaint and a piece of
+praise collapsed into one theme called "Signup Fails", reported as a churn risk.
+
+Now 0.22 distance / 0.78 similarity. The two are the same number from opposite sides
+and must move together, or clustering and taxonomy matching disagree about what
+counts as the same thing.
+
+The lesson generalises: a constant validated only against synthetic fixtures is
+untested, not tested. Prefer erring toward over-splitting — it is visible, whereas
+over-merging produces confident, wrong output that nothing downstream can detect.
 
 **Trend detection** compares this run's per-theme share against that theme's trailing
 snapshots. With fewer than three prior snapshots it reports `insufficient_history`
