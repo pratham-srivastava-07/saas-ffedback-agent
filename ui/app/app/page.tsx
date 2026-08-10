@@ -208,8 +208,13 @@ export default function AnalyzePage() {
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                   disabled={running}
-                  rows={12}
-                  className="resize-y font-mono text-[13px]"
+                  rows={14}
+                  // field-sizing-fixed overrides the shared Textarea's
+                  // field-sizing-content, which sizes the box to its content
+                  // and silently ignores `rows` — leaving an empty box two
+                  // lines tall. This one should open at a usable size and stay
+                  // there, so a batch can be pasted without it jumping about.
+                  className="resize-y font-mono text-[13px] field-sizing-fixed"
                   placeholder={
                     "Signup is broken after the update\nBilling charged me twice"
                   }
