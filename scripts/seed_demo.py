@@ -71,9 +71,27 @@ async def seed(
     reset: bool,
     workspace_id: str = DEFAULT_WORKSPACE_ID,
 ) -> int:
+    # --reset deletes the database, which deletes the workspace being named.
+    # Refuse rather than wipe the account and then fail the lookup.
+    if reset and workspace_id != DEFAULT_WORKSPACE_ID:
+        print(
+            "--reset and --workspace cannot be combined: resetting deletes the\n"
+            "database, and with it the workspace you are seeding into.\n\n"
+            "Seed into your workspace without --reset — taxonomy matching is\n"
+            "scoped per workspace, so older data elsewhere cannot interfere."
+        )
+        return 1
+
     if reset and database.exists():
-        database.unlink()
-        print(f"Removed existing database at {database}")
+        try:
+            database.unlink()
+            print(f"Removed existing database at {database}")
+        except PermissionError:
+            print(
+                f"Cannot delete {database} — another process is holding it open.\n"
+                "Stop the running backend (Ctrl+C in its terminal) and try again."
+            )
+            return 1
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{database}")
     # Goes through the real startup path so the default workspace exists;
