@@ -53,6 +53,7 @@ export default function AnalyzePage() {
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const pipelineRef = useRef<HTMLDivElement | null>(null);
 
   const lines = useMemo(
     () => text.split("\n").map((line) => line.trim()).filter(Boolean),
@@ -125,6 +126,19 @@ export default function AnalyzePage() {
     setProgress(initialProgress());
     setRunning(true);
 
+    // Bring the pipeline into view. A long feedback box can push it entirely
+    // below the fold, so hitting Run would otherwise look like nothing
+    // happened. requestAnimationFrame waits for the node to exist, since it
+    // only mounts once `running` is true.
+    requestAnimationFrame(() => {
+      pipelineRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+    });
+
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -159,8 +173,14 @@ export default function AnalyzePage() {
         description="One item per line. Watch each stage report as it finishes."
       />
 
-      <div className="grid gap-6 px-5 py-6 sm:px-8 xl:grid-cols-12">
-        <div className="space-y-6 xl:col-span-5">
+      {/*
+        One column, stacked in the order the work happens: write feedback,
+        watch the pipeline, read the result. The previous two-column split put
+        the form and the pipeline in one scroll context and the results in
+        another, so following a run meant tracking two places at once.
+      */}
+      <div className="space-y-6 px-5 py-6 sm:px-8">
+        <div className="space-y-6">
           <div className="rounded-lg border bg-surface p-5">
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="feedback">Feedback</Label>
@@ -179,7 +199,7 @@ export default function AnalyzePage() {
               value={text}
               onChange={(event) => setText(event.target.value)}
               disabled={running}
-              rows={12}
+              rows={8}
               className="mt-2 resize-y font-mono text-[13px]"
               placeholder={"Signup is broken after the update\nBilling charged me twice"}
               aria-invalid={Boolean(validation)}
@@ -196,7 +216,9 @@ export default function AnalyzePage() {
               )}
             </div>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            {/* Capped: full-width selects for two short enum values would
+                stretch across the whole card and look like an error. */}
+            <div className="mt-5 grid gap-4 sm:max-w-xl sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="tier">Customer tier</Label>
                 <Select
@@ -265,7 +287,10 @@ export default function AnalyzePage() {
           </div>
 
           {(running || result) && (
-            <div className="rounded-lg border bg-surface p-5">
+            <div
+              ref={pipelineRef}
+              className="scroll-mt-4 rounded-lg border bg-surface p-5"
+            >
               <h2 className="mb-4 font-display text-sm font-semibold tracking-tight">
                 Pipeline
               </h2>
@@ -274,7 +299,7 @@ export default function AnalyzePage() {
           )}
         </div>
 
-        <div className="space-y-6 xl:col-span-7">
+        <div className="space-y-6">
           {error && <ErrorState message={error} onRetry={canRun ? run : undefined} />}
 
           {!result && !error && (
