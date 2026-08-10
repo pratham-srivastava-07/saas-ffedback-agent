@@ -76,6 +76,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                // Without this the browser's default outline lands here — a
+                // hard white box on a dark sidebar that reads as a rendering
+                // bug. Keep a visible ring (removing it would break keyboard
+                // navigation), just the themed one used everywhere else.
+                "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                 active
                   ? "bg-secondary font-medium text-foreground"
                   : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",

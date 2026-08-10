@@ -27,7 +27,14 @@ export default function SettingsPage() {
         description="Your workspace and the key that authenticates it."
       />
 
-      <div className="max-w-2xl space-y-8 px-5 py-6 sm:px-8">
+      {/*
+        Two columns from lg up. Auto-placement puts Workspace and Session in
+        the left column and the taller API-key card on the right, which stops
+        a 672px form stranding a thousand pixels of empty space beside it.
+        `items-start` keeps each card its natural height rather than stretching
+        the short ones to match.
+      */}
+      <div className="grid max-w-5xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:items-start">
         <section className="rounded-lg border bg-surface p-5">
           <h2 className="font-display text-sm font-semibold">Workspace</h2>
           <dl className="mt-4 space-y-3 text-sm">

@@ -63,7 +63,10 @@ export default function IngestPage() {
         description="Analyse a CSV export. The first row must be a header."
       />
 
-      <form onSubmit={submit} className="max-w-2xl space-y-8 px-5 py-6 sm:px-8">
+      <form
+        onSubmit={submit}
+        className="grid max-w-5xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:items-start"
+      >
         <section className="rounded-lg border bg-surface p-5">
           <Label htmlFor="csv-file" className="font-display text-sm font-semibold">
             CSV file
@@ -102,7 +105,9 @@ export default function IngestPage() {
             to exist.
           </p>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {/* Single column: this card now sits in a half-width grid track,
+              where side-by-side inputs would be cramped. */}
+          <div className="mt-4 grid gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="text-column">Text column (required)</Label>
               <Input
@@ -162,9 +167,9 @@ export default function IngestPage() {
           </div>
         </section>
 
-        {error && <ErrorState message={error} />}
+        {error && <ErrorState message={error} className="lg:col-span-2" />}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 lg:col-span-2">
           <Button type="submit" disabled={!file || submitting}>
             <Upload className="size-3.5" aria-hidden />
             {submitting ? "Analysing..." : "Analyse CSV"}
