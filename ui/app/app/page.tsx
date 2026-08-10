@@ -209,12 +209,13 @@ export default function AnalyzePage() {
                   onChange={(event) => setText(event.target.value)}
                   disabled={running}
                   rows={18}
+                  wrap="soft"
                   // field-sizing-fixed overrides the shared Textarea's
                   // field-sizing-content, which sizes the box to its content
                   // and silently ignores `rows` — leaving an empty box two
                   // lines tall. This one should open at a usable size and stay
                   // there, so a batch can be pasted without it jumping about.
-                  className="resize-y font-mono text-sm field-sizing-fixed"
+                  className="resize-y font-mono text-sm field-sizing-fixed w-full"
                   // Full-length examples: a two-word placeholder in an 80-column
                   // box makes the field look broken before anyone types.
                   placeholder={
