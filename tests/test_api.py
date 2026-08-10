@@ -2,32 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
-from app.api.ratelimit import RateLimiter
-from app.main import app as fastapi_app
-
-
-@pytest_asyncio.fixture
-async def client(runtime, session_factory, settings, workspace):
-    """Authenticated client. Bypasses the lifespan, which would build a real
-    runtime and demand provider keys."""
-    fastapi_app.state.runtime = runtime
-    fastapi_app.state.session_factory = session_factory
-    fastapi_app.state.settings = settings
-    fastapi_app.state.rate_limiter = RateLimiter(
-        capacity=settings.rate_limit_requests,
-        window_seconds=settings.rate_limit_window_seconds,
-    )
-    async with AsyncClient(
-        transport=ASGITransport(app=fastapi_app),
-        base_url="http://test",
-        headers={"X-API-Key": workspace.api_key},
-    ) as async_client:
-        yield async_client
-
-
 def _payload(batch):
     return {"raw_feedback": batch}
 

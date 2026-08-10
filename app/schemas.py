@@ -43,6 +43,16 @@ class AnalyzeRequest(BaseModel):
     raw_feedback: list[FeedbackItemIn] = Field(min_length=1, max_length=200)
 
 
+class AppStoreRequest(BaseModel):
+    """Pull an app's public reviews. No credentials needed from the user."""
+
+    app_id: str = Field(min_length=1, max_length=32)
+    country: str = Field(default="us", min_length=2, max_length=2)
+    # Apple returns ~50 reviews per page. Capped so one request cannot fan out
+    # into an unbounded number of upstream fetches.
+    pages: int = Field(default=1, ge=1, le=5)
+
+
 class AnalyzedItemOut(BaseModel):
     id: str
     text: str

@@ -315,6 +315,35 @@ upload — a stray `Platinum` should not cost you the whole file.
 
 ---
 
+## Frontend
+
+Next.js 15 app in `ui/`, talking to this API over plain `fetch` — no SSR of API
+data, every page is a client component. It covers everything the API exposes for
+reading and analysing: paste-in or CSV analysis with a live SSE view of the
+pipeline running node-by-node, the theme taxonomy with trend sparklines, the
+evidence behind each theme, run history, a past run replayed exactly as it was
+ranked, and a 3D explorer of a run's embedding space. `/app/settings` shows the
+workspace and its API key; sign-up/login use `/auth/*` above.
+
+Every call sends the stored key as `X-API-Key`; a 401 anywhere signs the app out.
+Point it at a backend with `NEXT_PUBLIC_API_URL` (defaults to
+`http://localhost:8000`):
+
+```bash
+cd ui
+npm install
+echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+npm run dev
+```
+
+The default CORS origins above already allow `npm run dev`'s port. Most of
+`/app` — themes, runs, the 3D explorer — needs no LLM keys and works against
+`ALLOW_ANONYMOUS_ACCESS=true` once the database has history in it (the demo
+seed above does this); only the analyze pages call the model. See `ui/README.md`
+for the page-by-page rundown and `ui/lib/api.ts` for the request layer.
+
+---
+
 ## The 3D cluster explorer
 
 `GET /runs/{id}/scatter` returns one point per feedback item, positioned by a PCA

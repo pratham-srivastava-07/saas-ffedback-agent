@@ -91,6 +91,34 @@ async def other_workspace(session_factory) -> WorkspaceHandle:
     return WorkspaceHandle(id=created.id, api_key=api_key)
 
 
+@pytest_asyncio.fixture
+async def client(runtime, session_factory, settings, workspace):
+    """Authenticated API client.
+
+    Bypasses the lifespan, which would build a real runtime and demand
+    provider keys. Lives here rather than in one test module because several
+    now drive the API.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.ratelimit import RateLimiter
+    from app.main import app as fastapi_app
+
+    fastapi_app.state.runtime = runtime
+    fastapi_app.state.session_factory = session_factory
+    fastapi_app.state.settings = settings
+    fastapi_app.state.rate_limiter = RateLimiter(
+        capacity=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=fastapi_app),
+        base_url="http://test",
+        headers={"X-API-Key": workspace.api_key},
+    ) as async_client:
+        yield async_client
+
+
 @pytest.fixture
 def feedback_batch() -> list[dict]:
     return [
