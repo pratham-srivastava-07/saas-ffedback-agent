@@ -221,16 +221,6 @@ export default function AnalyzePage() {
                   aria-invalid={Boolean(validation)}
                 />
 
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="font-mono text-xs text-muted-foreground tabular">
-                    {lines.length} / {MAX_ITEMS} items
-                  </p>
-                  {validation && (
-                    <p className="text-xs text-destructive" role="alert">
-                      {validation}
-                    </p>
-                  )}
-                </div>
               </div>
 
               <div className="flex flex-col gap-4">
@@ -304,9 +294,32 @@ export default function AnalyzePage() {
                   </Link>
                 </p>
 
-                {/* mt-auto pins the action to the bottom of the column, level
-                    with the foot of the textarea. */}
-                <div className="mt-auto flex gap-2 pt-2">
+                {/*
+                  The count lives here rather than under the textarea: it is
+                  what you check immediately before clicking Run, so it belongs
+                  beside the button. It also fills what was otherwise dead space
+                  between the settings and the action.
+                */}
+                <div className="mt-auto rounded-md border border-border bg-muted/30 px-4 py-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-mono text-2xl leading-none tabular">
+                      {lines.length}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {lines.length === 1 ? "item" : "items"} ready
+                    </span>
+                  </div>
+                  <p className="mt-1 font-mono text-[11px] text-muted-foreground tabular">
+                    {MAX_ITEMS} max per batch
+                  </p>
+                  {validation && (
+                    <p className="mt-2 text-xs text-destructive" role="alert">
+                      {validation}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
                   <Button
                     onClick={run}
                     disabled={!canRun}
