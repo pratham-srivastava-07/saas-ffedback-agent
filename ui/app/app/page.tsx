@@ -201,22 +201,32 @@ export default function AnalyzePage() {
               apply to the batch now fill it instead of stacking underneath and
               pushing everything down.
             */}
-            <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            {/*
+              The text column is sized to the content, not to the viewport.
+              42rem at 14px monospace is about 80 characters, which is what a
+              feedback line actually runs to — so real lines reach the right
+              edge instead of stopping a third of the way across.
+            */}
+            <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,42rem)_20rem]">
               <div className="min-w-0">
                 <Textarea
                   id="feedback"
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                   disabled={running}
-                  rows={14}
+                  rows={18}
                   // field-sizing-fixed overrides the shared Textarea's
                   // field-sizing-content, which sizes the box to its content
                   // and silently ignores `rows` — leaving an empty box two
                   // lines tall. This one should open at a usable size and stay
                   // there, so a batch can be pasted without it jumping about.
-                  className="resize-y font-mono text-[13px] field-sizing-fixed"
+                  className="resize-y font-mono text-sm field-sizing-fixed"
+                  // Full-length examples: a two-word placeholder in an 80-column
+                  // box makes the field look broken before anyone types.
                   placeholder={
-                    "Signup is broken after the update\nBilling charged me twice"
+                    "Signup is completely broken after the update, OAuth just spins\n" +
+                    "Billing charged my card twice this month and support has not replied\n" +
+                    "Dashboard takes thirty seconds to load with a year of data"
                   }
                   aria-invalid={Boolean(validation)}
                 />
