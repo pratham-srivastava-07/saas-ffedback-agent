@@ -201,13 +201,7 @@ export default function AnalyzePage() {
               apply to the batch now fill it instead of stacking underneath and
               pushing everything down.
             */}
-            {/*
-              The text column is sized to the content, not to the viewport.
-              42rem at 14px monospace is about 80 characters, which is what a
-              feedback line actually runs to — so real lines reach the right
-              edge instead of stopping a third of the way across.
-            */}
-            <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,42rem)_20rem]">
+            <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
               <div className="min-w-0">
                 <Textarea
                   id="feedback"
