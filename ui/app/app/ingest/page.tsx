@@ -65,7 +65,7 @@ export default function IngestPage() {
 
       <form
         onSubmit={submit}
-        className="grid max-w-5xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:items-start"
+        className="grid gap-6 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:items-start"
       >
         <section className="rounded-lg border bg-surface p-5">
           <Label htmlFor="csv-file" className="font-display text-sm font-semibold">
@@ -105,9 +105,9 @@ export default function IngestPage() {
             to exist.
           </p>
 
-          {/* Single column: this card now sits in a half-width grid track,
-              where side-by-side inputs would be cramped. */}
-          <div className="mt-4 grid gap-4">
+          {/* Single column while this card shares a half-width track; paired
+              again once the viewport is wide enough for both to breathe. */}
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="text-column">Text column (required)</Label>
               <Input

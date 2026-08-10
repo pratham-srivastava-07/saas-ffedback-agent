@@ -34,7 +34,7 @@ export default function SettingsPage() {
         `items-start` keeps each card its natural height rather than stretching
         the short ones to match.
       */}
-      <div className="grid max-w-5xl gap-6 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:items-start">
+      <div className="grid gap-6 px-5 py-6 sm:px-8 lg:grid-cols-2 lg:items-start xl:grid-cols-3">
         <section className="rounded-lg border bg-surface p-5">
           <h2 className="font-display text-sm font-semibold">Workspace</h2>
           <dl className="mt-4 space-y-3 text-sm">
