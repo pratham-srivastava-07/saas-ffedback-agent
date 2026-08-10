@@ -11,10 +11,17 @@ import { useEffect, useState } from "react";
  * device cannot do WebGL the fallback is the design, not an error.
  */
 
+import type { ClusterScatterProps } from "@/components/three/cluster-scatter";
+
 const PointField = dynamic(() => import("@/components/three/point-field"), {
   ssr: false,
   loading: () => null,
 });
+
+const ClusterScatter = dynamic(
+  () => import("@/components/three/cluster-scatter"),
+  { ssr: false, loading: () => null },
+);
 
 function supportsWebGL(): boolean {
   if (typeof window === "undefined") return false;
@@ -69,6 +76,40 @@ export function HeroField({ className }: { className?: string }) {
   return (
     <div className={className} aria-hidden>
       <PointField reducedMotion={reducedMotion} />
+    </div>
+  );
+}
+
+/**
+ * The cluster explorer's canvas.
+ *
+ * Unlike the hero, this one carries information, so a device without WebGL
+ * cannot simply be given a gradient — the caller supplies a fallback, and the
+ * page keeps a readable list of the same data either way.
+ */
+export function ScatterField({
+  className,
+  fallback,
+  ...props
+}: Omit<ClusterScatterProps, "reducedMotion"> & {
+  className?: string;
+  fallback: React.ReactNode;
+}) {
+  const [ready, setReady] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    setReady(supportsWebGL());
+    setChecked(true);
+  }, []);
+
+  if (!checked) return <div className={className} />;
+  if (!ready) return <div className={className}>{fallback}</div>;
+
+  return (
+    <div className={className}>
+      <ClusterScatter {...props} reducedMotion={reducedMotion} />
     </div>
   );
 }
