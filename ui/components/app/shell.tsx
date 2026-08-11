@@ -11,6 +11,7 @@ import {
   Menu,
   Play,
   Settings,
+  LayoutDashboard,
   Upload,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const NAV = [
+  { href: "/app/overview", label: "Overview", icon: LayoutDashboard, exact: false },
   { href: "/app", label: "Analyze", icon: Play, exact: true },
   { href: "/app/themes", label: "Themes", icon: Layers, exact: false },
   { href: "/app/explore", label: "Explore", icon: Boxes, exact: false },
