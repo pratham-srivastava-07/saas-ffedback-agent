@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/app/shell";
 import { EmptyState, ErrorState, SkeletonCard, SkeletonRows } from "@/components/app/states";
 import { RankedBars, SentimentSplit, VolumeBars } from "@/components/app/charts";
 import { TrendBadge } from "@/components/app/signals";
+import { DeltaBadge } from "@/components/app/patterns";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
@@ -48,6 +49,10 @@ export default function OverviewPage() {
       themes: themes.data?.length ?? 0,
     };
   }, [runs.data, themes.data]);
+
+  // The API returns runs newest first, so these are the last two.
+  const latestVolume = runs.data?.[0]?.item_count ?? null;
+  const previousVolume = runs.data?.[1]?.item_count ?? null;
 
   // Oldest first: a timeline that reads right-to-left is a lie about time.
   const volume = useMemo(
@@ -143,7 +148,23 @@ export default function OverviewPage() {
                 icon={MessageSquare}
                 label="Feedback analysed"
                 value={stats.analysed}
-                context={`across ${stats.runs} run${stats.runs === 1 ? "" : "s"}`}
+                context={
+                  latestVolume === null
+                    ? `across ${stats.runs} run${stats.runs === 1 ? "" : "s"}`
+                    : `latest run: ${latestVolume} items / ${stats.runs} runs total`
+                }
+                delta={
+                  latestVolume === null ? undefined : (
+                    // Compares the last two runs, not the cumulative total —
+                    // the total only ever grows, so a delta on it means nothing.
+                    // Volume itself is neither good nor bad, hence neutral.
+                    <DeltaBadge
+                      current={latestVolume}
+                      previous={previousVolume}
+                      goodWhen="neutral"
+                    />
+                  )
+                }
               />
               <StatTile
                 icon={Layers}
@@ -319,12 +340,14 @@ function StatTile({
   value,
   context,
   emphasis,
+  delta,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
   context: string;
   emphasis?: "negative";
+  delta?: React.ReactNode;
 }) {
   return (
     <div className="rounded-lg border bg-surface p-5">
@@ -332,14 +355,22 @@ function StatTile({
         <p className="text-xs text-muted-foreground">{label}</p>
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </div>
-      <p
-        className={cn(
-          "mt-3 font-mono text-3xl leading-none tabular",
-          emphasis === "negative" && "text-negative",
-        )}
-      >
-        {value.toLocaleString()}
-      </p>
+      <div className="mt-3 flex items-baseline gap-2.5">
+        <p
+          className={cn(
+            "font-mono text-3xl leading-none tabular",
+            emphasis === "negative" && "text-negative",
+          )}
+        >
+          {value.toLocaleString()}
+        </p>
+        {/*
+          Only tiles whose comparison is real carry a delta. A cumulative
+          total always rises, so a percentage on one would be decoration
+          dressed as insight.
+        */}
+        {delta}
+      </div>
       <p className="mt-2 font-mono text-[11px] text-muted-foreground tabular">
         {context}
       </p>

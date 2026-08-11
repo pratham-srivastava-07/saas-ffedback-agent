@@ -17,6 +17,7 @@ import {
   ThemeTable,
 } from "@/components/app/results";
 import { EmptyState, ErrorState } from "@/components/app/states";
+import { ElapsedTimer } from "@/components/app/patterns";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -354,9 +355,15 @@ export default function AnalyzePage() {
               ref={pipelineRef}
               className="scroll-mt-4 rounded-lg border bg-surface p-5"
             >
-              <h2 className="mb-4 font-display text-sm font-semibold tracking-tight">
-                Pipeline
-              </h2>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="font-display text-sm font-semibold tracking-tight">
+                  Pipeline
+                </h2>
+                {/* Counting up is the proof of life: a run takes tens of
+                    seconds, and a bare spinner cannot distinguish working
+                    from hung. */}
+                <ElapsedTimer running={running} />
+              </div>
               <PipelineMonitor progress={progress} />
             </div>
           )}
