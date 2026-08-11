@@ -10,16 +10,26 @@ import {
   LogOut,
   Menu,
   Play,
+  Search,
   Settings,
   LayoutDashboard,
   Upload,
   X,
 } from "lucide-react";
 
+import dynamic from "next/dynamic";
+
+// Renders nothing until opened, so cmdk stays out of every page's first
+// load. The shortcut lives in its own module and still works immediately.
+const CommandMenu = dynamic(
+  () => import("@/components/app/command-menu").then((m) => m.CommandMenu),
+  { ssr: false },
+);
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Logo } from "@/components/logo";
 import { useAuth } from "@/lib/auth";
+import { useCommandMenu } from "@/lib/use-command-menu";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -41,6 +51,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { status, email, workspace, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
+
+  const currentLabel =
+    [...NAV].reverse().find((item) => isActive(pathname, item.href, item.exact))
+      ?.label ?? "Analyze";
+
+  // Rendered after mount only: reading the platform during SSR would emit
+  // the wrong glyph and hydrate mismatched.
+  const [modifierKey, setModifierKey] = useState("Ctrl ");
+  useEffect(() => {
+    if (navigator.platform.toLowerCase().includes("mac")) setModifierKey("⌘");
+  }, []);
 
   useEffect(() => {
     if (status === "anonymous") router.replace("/login");
@@ -135,6 +157,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-col">
+        {/*
+          Desktop top bar. Deliberately quiet: where you are, one way to
+          search, nothing else. Page-level actions belong to the page header
+          below it, not up here competing with navigation.
+        */}
+        <header className="sticky top-0 z-30 hidden h-14 items-center justify-between gap-4 border-b border-border bg-background/85 px-6 backdrop-blur lg:flex">
+          <nav aria-label="Breadcrumb" className="min-w-0">
+            <ol className="flex items-center gap-2 text-sm">
+              <li className="text-muted-foreground">{workspace?.name ?? "Workspace"}</li>
+              <li className="text-muted-foreground/50" aria-hidden>
+                /
+              </li>
+              <li className="font-medium text-foreground">{currentLabel}</li>
+            </ol>
+          </nav>
+
+          <button
+            type="button"
+            onClick={() => setCommandOpen(true)}
+            className="interactive flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <Search className="size-3.5" aria-hidden />
+            <span className="pr-6">Search</span>
+            <kbd className="type-meta rounded border border-border px-1.5 py-0.5">
+              {modifierKey}K
+            </kbd>
+          </button>
+        </header>
+
         {/* Top bar for small screens. */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-background/90 px-4 backdrop-blur lg:hidden">
           <Link href="/app" className="flex items-center gap-2">
@@ -172,6 +223,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="min-w-0 flex-1">{children}</main>
       </div>
+
+      <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   );
 }

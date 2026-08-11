@@ -67,7 +67,7 @@ const STAT_LABEL: Record<string, string> = {
   approved: "approved",
 };
 
-function formatStats(progress: NodeProgress): string | null {
+export function formatStats(progress: NodeProgress): string | null {
   if (progress.completed !== undefined) {
     return `${progress.completed} done`;
   }

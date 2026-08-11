@@ -5,11 +5,26 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Loader2, Play, Square } from "lucide-react";
 
 import { PageHeader } from "@/components/app/shell";
+import dynamic from "next/dynamic";
+
 import {
   PipelineMonitor,
+  formatStats,
   initialProgress,
   type NodeProgress,
 } from "@/components/app/pipeline-monitor";
+
+// React Flow is heavy and only ever mounts once a run starts, so it stays out
+// of the page's initial bundle.
+const PipelineGraph = dynamic(
+  () => import("@/components/app/pipeline-graph").then((m) => m.PipelineGraph),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[30rem] w-full animate-pulse rounded-md border border-border bg-muted/30" />
+    ),
+  },
+);
 import {
   Recommendations,
   RunStats,
@@ -52,6 +67,7 @@ export default function AnalyzePage() {
     initialProgress,
   );
   const [running, setRunning] = useState(false);
+  const [pipelineView, setPipelineView] = useState<"graph" | "list">("graph");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -356,15 +372,57 @@ export default function AnalyzePage() {
               className="scroll-mt-4 rounded-lg border bg-surface p-5"
             >
               <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="font-display text-sm font-semibold tracking-tight">
-                  Pipeline
-                </h2>
-                {/* Counting up is the proof of life: a run takes tens of
-                    seconds, and a bare spinner cannot distinguish working
-                    from hung. */}
-                <ElapsedTimer running={running} />
+                <div>
+                  <h2 className="type-section">Pipeline</h2>
+                  <p className="type-meta mt-0.5 text-muted-foreground">
+                    {/* Named because they are the reason this is a graph. */}
+                    one branch, one bounded cycle
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* Counting up is the proof of life: a run takes tens of
+                      seconds, and a bare spinner cannot distinguish working
+                      from hung. */}
+                  <ElapsedTimer running={running} />
+                  <div className="flex rounded-md border border-border p-0.5">
+                    {(["graph", "list"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setPipelineView(mode)}
+                        aria-pressed={pipelineView === mode}
+                        className={cn(
+                          "rounded px-2 py-1 text-xs capitalize transition-colors",
+                          "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                          pipelineView === mode
+                            ? "bg-secondary font-medium text-foreground"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <PipelineMonitor progress={progress} />
+
+              {/*
+                The list is kept, not replaced. It is denser, screen-reader
+                friendly, and works without WebGL-adjacent machinery — the
+                graph is the better explanation, the list the better readout.
+              */}
+              {pipelineView === "graph" ? (
+                <PipelineGraph
+                  progress={progress}
+                  statFor={(node) => {
+                    const entry = progress[node];
+                    return entry ? formatStats(entry) : null;
+                  }}
+                  className="-mx-2 rounded-md border border-border"
+                />
+              ) : (
+                <PipelineMonitor progress={progress} />
+              )}
             </div>
           )}
         </div>
