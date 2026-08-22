@@ -7,6 +7,12 @@
  * per-item `error` and adds `run_id`.
  */
 
+import {
+  MISCONFIGURED_MESSAGE,
+  looksMisconfigured,
+  messageForStatus,
+} from "@/lib/errors";
+
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
 
@@ -235,13 +241,49 @@ export interface ScatterResponse {
    Client
 ------------------------------------------------------------------------- */
 
+/**
+ * `message` is what a person reads. `detail` is what a developer needs.
+ *
+ * Anything rendered in the interface uses `message`, which comes from the
+ * error map and never names a host or an internal failure. `detail` carries
+ * the raw server text and goes to the console only.
+ */
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
-    super(message);
+  detail?: string;
+
+  constructor(status: number, serverText?: string, userMessage?: string) {
+    super(userMessage ?? messageForStatus(status, serverText));
     this.name = "ApiError";
     this.status = status;
+    this.detail = serverText;
+
+    if (serverText && serverText !== this.message) {
+      console.error(`[api] ${status} ${serverText}`);
+    }
   }
+}
+
+/**
+ * A request that never reached a server.
+ *
+ * Distinguishes "the network is down" from "this build has no backend URL",
+ * because only one of those is the reader's problem. Either way the host is
+ * named in the console, never in the interface.
+ */
+function unreachable(path: string): ApiError {
+  const misconfigured = looksMisconfigured(API_BASE);
+
+  console.error(
+    misconfigured
+      ? `[api] ${API_BASE}${path} is a localhost address, but this page is served from ` +
+          `${window.location.origin}. NEXT_PUBLIC_API_URL was not set at build time.`
+      : `[api] request to ${API_BASE}${path} failed to reach a server.`,
+  );
+
+  // A misconfigured build overrides the generic offline sentence: retrying
+  // will never help, and whoever deployed it needs to hear the actual cause.
+  return new ApiError(0, undefined, misconfigured ? MISCONFIGURED_MESSAGE : undefined);
 }
 
 let unauthorizedHandler: (() => void) | null = null;
@@ -312,15 +354,12 @@ export async function request<T>(
       body: payload,
     });
   } catch {
-    throw new ApiError(
-      0,
-      `Cannot reach the API at ${API_BASE}. Check that the backend is running.`,
-    );
+    throw unreachable(path);
   }
 
   if (response.status === 401 && !anonymous) {
     unauthorizedHandler?.();
-    throw new ApiError(401, "Your session expired. Sign in again.");
+    throw new ApiError(401);
   }
 
   if (!response.ok) throw new ApiError(response.status, await extractError(response));
@@ -411,7 +450,7 @@ export async function streamAnalyze(
     });
   } catch (error) {
     if ((error as Error)?.name === "AbortError") return;
-    throw new ApiError(0, `Cannot reach the API at ${API_BASE}.`);
+    throw unreachable("/analyze/stream");
   }
 
   if (response.status === 401) {
