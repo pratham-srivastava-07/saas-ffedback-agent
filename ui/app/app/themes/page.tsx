@@ -163,7 +163,7 @@ export default function ThemesPage() {
                     </div>
 
                     <span className="w-20 text-right font-mono text-sm tabular">
-                      {latest ? percent(latest.share) : "—"}
+                      {latest ? percent(latest.share) : "-"}
                     </span>
 
                     <div className="flex w-24 items-center justify-end gap-3">

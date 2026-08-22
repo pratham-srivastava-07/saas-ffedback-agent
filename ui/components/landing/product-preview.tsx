@@ -37,19 +37,7 @@ const NAV = [
 
 export function ProductPreview() {
   return (
-    <section className="relative isolate px-5 pb-24 sm:px-8">
-      {/* Glow emphasises the object; it never becomes the object. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[28rem] opacity-70"
-        style={{
-          background:
-            "radial-gradient(60rem 22rem at 50% 0%, var(--color-primary), transparent 70%)",
-          maskImage: "linear-gradient(to bottom, black, transparent)",
-          opacity: 0.09,
-        }}
-      />
-
+    <section className="px-5 pb-24 sm:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
           {/* Window chrome, quiet enough to read as a frame rather than an
@@ -61,7 +49,7 @@ export function ProductPreview() {
               <span className="size-2.5 rounded-full bg-border" />
             </div>
             <span className="mx-auto font-mono text-[11px] text-muted-foreground">
-              sentilytics — themes ranked by impact
+              sentilytics / themes ranked by impact
             </span>
           </div>
 
@@ -114,7 +102,7 @@ export function ProductPreview() {
 
               <p className="mt-6 border-t border-border pt-4 text-sm leading-relaxed text-muted-foreground">
                 <span className="text-foreground">OAuth signup failures</span> is
-                the week&apos;s top issue — 34 mentions, 3.1&times; its four-run
+                the week&apos;s top issue: 34 mentions, 3.1&times; its four-run
                 average, and nine of them from paying accounts.
               </p>
             </div>

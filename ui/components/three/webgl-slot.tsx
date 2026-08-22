@@ -59,18 +59,12 @@ export function HeroField({ className }: { className?: string }) {
   }, []);
 
   if (!ready) {
-    // Deliberate, not a placeholder: a soft field that echoes the cloud's
-    // composition so the hero still has depth without a GPU.
-    return (
-      <div
-        className={className}
-        aria-hidden
-        style={{
-          background:
-            "radial-gradient(38rem 24rem at 68% 42%, oklch(0.55 0.19 264 / 0.20), transparent 70%), radial-gradient(26rem 18rem at 82% 68%, oklch(0.6 0.1 250 / 0.14), transparent 72%)",
-        }}
-      />
-    );
+    // Nothing. The previous fallback was two stacked radial gradients standing
+    // in for the point cloud, which is the decorative-orb pattern the frontend
+    // rules ban outright. A hero that needs a coloured blur behind it to look
+    // finished is not finished; the type and the layout carry it, and a device
+    // without WebGL simply gets the page without the ornament.
+    return null;
   }
 
   return (

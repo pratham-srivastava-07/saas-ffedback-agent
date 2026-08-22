@@ -76,7 +76,7 @@ export default function ExplorePage() {
                 .filter((run) => run.item_count > 0)
                 .map((run) => (
                   <option key={run.id} value={run.id}>
-                    {formatDate(run.created_at)} — {run.item_count} items
+                    {formatDate(run.created_at)}, {run.item_count} items
                   </option>
                 ))}
             </select>
@@ -131,8 +131,7 @@ export default function ExplorePage() {
               */}
               <p className="mt-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
                 Positions are a PCA projection of the embedding space. The axes
-                have no individual meaning — only the distances between points
-                do. Coordinates are fit per run and are not comparable between
+                have no individual meaning. Only the distances between points do. Coordinates are fit per run and are not comparable between
                 runs.
               </p>
             </div>

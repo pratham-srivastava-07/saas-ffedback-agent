@@ -40,11 +40,11 @@ export default function SettingsPage() {
           <dl className="mt-4 space-y-3 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Name</dt>
-              <dd className="font-medium">{workspace?.name ?? "—"}</dd>
+              <dd className="font-medium">{workspace?.name ?? "-"}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Workspace ID</dt>
-              <dd className="truncate font-mono text-xs">{workspace?.id ?? "—"}</dd>
+              <dd className="truncate font-mono text-xs">{workspace?.id ?? "-"}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">Signed in as</dt>
@@ -71,7 +71,7 @@ export default function SettingsPage() {
                 ? revealed
                   ? apiKey
                   : `${apiKey.slice(0, 8)}${"•".repeat(24)}`
-                : "—"}
+                : "-"}
             </code>
             <Button
               variant="outline"
@@ -103,8 +103,8 @@ export default function SettingsPage() {
               aria-hidden
             />
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Signing in again — on another device or in another tab — issues a
-              new key and immediately invalidates this one. Only a hash of the
+              Signing in again, on another device or in another tab, issues a new
+              key and immediately invalidates this one. Only a hash of the
               key is stored, so an existing key can never be shown to you twice.
             </p>
           </div>

@@ -207,7 +207,7 @@ export default function OverviewPage() {
               Sentiment, latest run
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {latest.data ? formatDate(latest.data.created_at) : "—"}
+              {latest.data ? formatDate(latest.data.created_at) : "-"}
             </p>
             <div className="mt-5">
               {latest.loading ? (

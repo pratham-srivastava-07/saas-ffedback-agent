@@ -12,7 +12,7 @@
  * recessive axes, and a hover tooltip on every mark.
  */
 
-import { useId, useState } from "react";
+import { useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -182,7 +182,6 @@ export function SentimentSplit({
   className?: string;
 }) {
   const total = positive + neutral + negative;
-  const gradientId = useId();
 
   if (total === 0) {
     return <ChartEmpty className={className} />;
@@ -195,7 +194,7 @@ export function SentimentSplit({
   ].filter((part) => part.value > 0);
 
   return (
-    <div className={className} key={gradientId}>
+    <div className={className}>
       {/* gap-[2px] is the surface spacer between adjacent fills. */}
       <div
         className="flex h-2.5 gap-[2px] overflow-hidden rounded-full"
