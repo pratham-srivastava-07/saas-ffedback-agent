@@ -2,13 +2,18 @@
 
 ## Current state
 
-**Nothing is deployed.** There is no frontend hosting configured anywhere in this
-repo, no `vercel.json`, no `netlify.toml`, no `render.yaml`. The old backend at
-`saas-feedback-agent.onrender.com` no longer responds.
+**Nothing is running yet.** `render.yaml` describes the backend, but describing
+a deploy is not the same as having one, and no host has been pointed at it. The
+old backend at `saas-feedback-agent.onrender.com` no longer responds.
 
 So if a deployed URL is showing an old UI, it is not being fed by this branch. It
 is either a stale build from before the rebuild, or a host pointed at a different
 commit.
+
+A frontend already on Vercel that shows *"This app is not connected to a server
+yet"* is the same story from the other side: `NEXT_PUBLIC_API_URL` is inlined at
+build time, so setting it is not enough. The project has to be redeployed after
+the variable exists, or the old bundle keeps its localhost fallback.
 
 ---
 
