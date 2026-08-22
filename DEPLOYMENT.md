@@ -22,13 +22,19 @@ backend gives you a login screen that cannot log anyone in.
 
 ## 1. Backend
 
-A `Dockerfile` is already in the repo, so any container host works. Render, Fly
-and Railway all build it directly.
+**Fastest path: the Render Blueprint.** `render.yaml` is in the repo root. In
+Render choose New, then Blueprint, and point it at this repository. It builds the
+Dockerfile, mounts the disk the database needs, sets the health check, and
+prompts for the two API keys. Nothing is committed.
 
-**Start command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+Any other container host works too, since the `Dockerfile` is standard.
+
+**Start command,** if a host asks for one rather than reading the Dockerfile:
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 
 Note the module path. It is `app.main:app`, not `main:app`. The entry point moved
 into the package during the rebuild, and an old host config will fail on boot.
+The container binds `$PORT` when the host sets it, falling back to 8000.
 
 **Required environment**
 

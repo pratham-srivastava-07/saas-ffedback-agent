@@ -1,0 +1,56 @@
+# Render Blueprint for the backend.
+#
+# Deploy with: New > Blueprint, point it at this repo. Render reads this file,
+# builds the Dockerfile, and prompts for the two secrets marked sync: false.
+#
+# The frontend is not here. It is a Next.js app in ui/ and belongs on Vercel;
+# see DEPLOYMENT.md.
+
+services:
+  - type: web
+    name: sentilytics-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+
+    # A disk requires a paid instance. That is not an upsell, it is the
+    # difference between the product working and not: the database is SQLite on
+    # local disk, and a free instance wipes that disk on every restart and
+    # redeploy. Themes and their snapshots are what make trend detection
+    # possible, so losing them means every theme reports insufficient_history
+    # forever, because history never accumulates past a single run. The one
+    # capability that separates this from a stateless demo stops working.
+    #
+    # To run without a disk anyway, delete the plan and disk blocks below and
+    # accept that the database resets. Accounts vanish with it.
+    plan: starter
+
+    disk:
+      name: sentilytics-data
+      # Matches the VOLUME and DATABASE_URL already set in the Dockerfile.
+      mountPath: /data
+      sizeGB: 1
+
+    healthCheckPath: /health
+
+    envVars:
+      # Prompted at deploy time and never committed.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+
+      # text-embedding-004 is retired and returns 404. Pinned so a fresh
+      # deploy does not rediscover that the hard way.
+      - key: EMBEDDING_MODEL
+        value: models/gemini-embedding-001
+
+      # Comma separated, exact origins including scheme. Set this to the
+      # Vercel URL once the frontend is up, or every browser request is
+      # blocked by CORS while the API itself looks perfectly healthy.
+      - key: CORS_ORIGINS
+        sync: false
+
+      # Deliberately absent: ALLOW_ANONYMOUS_ACCESS. It defaults to false and
+      # must stay that way here. It exists for local demos; on a public
+      # instance it lets anyone run analyses against your API keys, and every
+      # request costs you money.
