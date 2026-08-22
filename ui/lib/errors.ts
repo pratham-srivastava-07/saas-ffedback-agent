@@ -14,9 +14,12 @@
 export const OFFLINE_MESSAGE =
   "Cannot reach the service right now. Check your connection and try again.";
 
-/** Shown when the frontend was built without a backend URL. */
-export const MISCONFIGURED_MESSAGE =
-  "This app is not connected to a server yet. If you deployed it, set NEXT_PUBLIC_API_URL.";
+// There is deliberately no user-facing message for a misconfigured build.
+// A missing backend URL is the operator's problem and nobody signing in can
+// act on it, so they get the same sentence as any other unreachable service
+// and the precise diagnosis goes to the console. An earlier version printed
+// the environment variable name into the sign-in form, which is exactly the
+// leak this module exists to prevent.
 
 /**
  * Status to sentence.

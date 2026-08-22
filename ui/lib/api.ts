@@ -7,11 +7,7 @@
  * per-item `error` and adds `run_id`.
  */
 
-import {
-  MISCONFIGURED_MESSAGE,
-  looksMisconfigured,
-  messageForStatus,
-} from "@/lib/errors";
+import { looksMisconfigured, messageForStatus } from "@/lib/errors";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000";
@@ -281,9 +277,9 @@ function unreachable(path: string): ApiError {
       : `[api] request to ${API_BASE}${path} failed to reach a server.`,
   );
 
-  // A misconfigured build overrides the generic offline sentence: retrying
-  // will never help, and whoever deployed it needs to hear the actual cause.
-  return new ApiError(0, undefined, misconfigured ? MISCONFIGURED_MESSAGE : undefined);
+  // Same sentence either way. The distinction above matters to whoever
+  // deployed this, and it reached them through the console.
+  return new ApiError(0);
 }
 
 let unauthorizedHandler: (() => void) | null = null;
