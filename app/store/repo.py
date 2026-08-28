@@ -12,7 +12,7 @@ import uuid
 from datetime import timedelta
 from typing import Any, Sequence
 
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import case, desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.store.models import (
@@ -452,3 +452,130 @@ async def count_items_for_theme(
         )
     )
     return int(result.scalar_one())
+
+
+# --------------------------------------------------------------------------
+# Feature areas
+# --------------------------------------------------------------------------
+
+# The analyser writes "unknown" when it cannot place an item in a product area.
+# That bucket is reported separately rather than ranked alongside real areas:
+# it is usually the largest single group, and letting it sit at the top of a
+# list of product areas would misrepresent both its size and its meaning.
+UNCLASSIFIED_AREA = "unknown"
+
+
+async def feature_area_rollup(
+    session: AsyncSession,
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    limit: int = 20,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Aggregate every analysed item by the product area it touches.
+
+    A second cut of the same data as themes. A theme is one problem; an area
+    is the part of the product that owns it, so one theme can span areas and
+    one area collects many themes. Product managers route work by area.
+
+    Returns the ranked areas, the total analysed count, and how many items
+    could not be placed.
+    """
+    stmt = (
+        select(
+            FeedbackItem.feature_area.label("name"),
+            func.count(FeedbackItem.id).label("mentions"),
+            func.avg(FeedbackItem.severity).label("avg_severity"),
+            func.sum(
+                case((FeedbackItem.churn_risk.is_(True), 1), else_=0)
+            ).label("churn_risk_count"),
+            func.sum(
+                case((FeedbackItem.sentiment == "positive", 1), else_=0)
+            ).label("positive"),
+            func.sum(
+                case((FeedbackItem.sentiment == "neutral", 1), else_=0)
+            ).label("neutral"),
+            func.sum(
+                case((FeedbackItem.sentiment == "negative", 1), else_=0)
+            ).label("negative"),
+            func.max(FeedbackItem.id).label("latest_row"),
+        )
+        # Failed items carry placeholder analysis, so counting them would
+        # inflate "unknown" with rows the model never actually read.
+        .where(
+            FeedbackItem.workspace_id == workspace_id,
+            FeedbackItem.status == "ok",
+            FeedbackItem.feature_area.is_not(None),
+        )
+        .group_by(FeedbackItem.feature_area)
+        .order_by(desc("mentions"))
+    )
+
+    rows = (await session.execute(stmt)).all()
+
+    total = sum(int(row.mentions) for row in rows)
+    unclassified = sum(
+        int(row.mentions) for row in rows if row.name == UNCLASSIFIED_AREA
+    )
+
+    areas = [
+        {
+            "name": row.name,
+            "mentions": int(row.mentions),
+            "share": (int(row.mentions) / total) if total else 0.0,
+            "avg_severity": round(float(row.avg_severity or 0), 2),
+            "churn_risk_count": int(row.churn_risk_count or 0),
+            "sentiment": {
+                "positive": int(row.positive or 0),
+                "neutral": int(row.neutral or 0),
+                "negative": int(row.negative or 0),
+            },
+        }
+        for row in rows
+        if row.name != UNCLASSIFIED_AREA
+    ][:limit]
+
+    return areas, total, unclassified
+
+
+async def themes_for_feature_areas(
+    session: AsyncSession,
+    area_names: Sequence[str],
+    workspace_id: str = DEFAULT_WORKSPACE_ID,
+    per_area: int = 3,
+) -> dict[str, list[dict[str, Any]]]:
+    """The themes appearing in each area, most mentioned first.
+
+    One grouped query for every area rather than one query per area, so the
+    endpoint cost does not grow with the number of areas on the page.
+    """
+    if not area_names:
+        return {}
+
+    stmt = (
+        select(
+            FeedbackItem.feature_area.label("area"),
+            Theme.id.label("theme_id"),
+            Theme.name.label("theme_name"),
+            func.count(FeedbackItem.id).label("mentions"),
+        )
+        .join(Theme, Theme.id == FeedbackItem.theme_id)
+        .where(
+            FeedbackItem.workspace_id == workspace_id,
+            FeedbackItem.status == "ok",
+            FeedbackItem.feature_area.in_(list(area_names)),
+        )
+        .group_by(FeedbackItem.feature_area, Theme.id, Theme.name)
+        .order_by(desc("mentions"))
+    )
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in (await session.execute(stmt)).all():
+        bucket = grouped.setdefault(row.area, [])
+        if len(bucket) < per_area:
+            bucket.append(
+                {
+                    "id": row.theme_id,
+                    "name": row.theme_name,
+                    "mentions": int(row.mentions),
+                }
+            )
+    return grouped

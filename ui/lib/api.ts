@@ -233,6 +233,31 @@ export interface ScatterResponse {
   themes: { id: string; name: string; count: number }[];
 }
 
+
+export interface AreaTheme {
+  id: string;
+  name: string;
+  mentions: number;
+}
+
+export interface FeatureArea {
+  name: string;
+  mentions: number;
+  /** Of all classified and unclassified items, so these do not sum to 1. */
+  share: number;
+  avg_severity: number;
+  churn_risk_count: number;
+  sentiment: Record<string, number>;
+  themes: AreaTheme[];
+}
+
+export interface FeatureAreasResponse {
+  areas: FeatureArea[];
+  total_items: number;
+  /** Items the analyser could not place. Reported, never ranked. */
+  unclassified: number;
+}
+
 /* -------------------------------------------------------------------------
    Client
 ------------------------------------------------------------------------- */
@@ -386,6 +411,9 @@ export const api = {
 
   analyzeCsv: (form: FormData) =>
     request<AnalyzeResponse>("/analyze/csv", { method: "POST", body: form }),
+
+  featureAreas: (limit = 20) =>
+    request<FeatureAreasResponse>(`/insights/feature-areas?limit=${limit}`),
 
   themes: (limit = 100) => request<ThemeListItem[]>(`/themes?limit=${limit}`),
 

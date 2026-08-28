@@ -179,3 +179,37 @@ class CritiqueVerdict(BaseModel):
     guidance: str = Field(
         default="", description="How to fix them, if not approved"
     )
+
+
+# --------------------------------------------------------------------------
+# Feature areas
+# --------------------------------------------------------------------------
+
+
+class AreaThemeOut(BaseModel):
+    id: str
+    name: str
+    mentions: int
+
+
+class FeatureAreaOut(BaseModel):
+    name: str
+    mentions: int
+    share: float
+    avg_severity: float
+    churn_risk_count: int
+    sentiment: dict[str, int]
+    themes: list[AreaThemeOut] = []
+
+
+class FeatureAreasResponse(BaseModel):
+    """Feedback rolled up by the part of the product it touches.
+
+    ``unclassified`` is reported rather than hidden. It is often the largest
+    single bucket, and a coverage figure the reader cannot see is one they
+    cannot judge the rest of the numbers against.
+    """
+
+    areas: list[FeatureAreaOut]
+    total_items: int
+    unclassified: int
